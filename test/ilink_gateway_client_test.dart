@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:luci_mobile/ilink/ilink_api.dart';
+import 'package:luci_mobile/ilink/ilink_feature_api.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 
 const _token =
@@ -14,7 +15,7 @@ void main() {
   late HttpServer server;
   late String baseUrl;
 
-  setUpAll(() async {
+  setUp(() async {
     final context = SecurityContext()
       ..useCertificateChain('test/fixtures/test_cert.pem')
       ..usePrivateKey('test/fixtures/test_key.pem');
@@ -49,6 +50,66 @@ void main() {
                 'hostname': 'phone',
               },
             ],
+          },
+          '/v1/openclash/status' => {
+            'running': true,
+            'version': 'test-core',
+            'mode': 'rule',
+            'mixedPort': 7893,
+            'config': '/etc/openclash/config/test.yaml',
+            'upload': 10,
+            'download': 20,
+            'uploadTotal': 100,
+            'downloadTotal': 200,
+          },
+          '/v1/openclash/groups' => {
+            'groups': [
+              {
+                'name': 'Proxy Select',
+                'type': 'Selector',
+                'now': 'Node 1',
+                'nodes': [
+                  {
+                    'name': 'Node 1',
+                    'type': 'Shadowsocks',
+                    'alive': true,
+                    'delay': 88,
+                  },
+                ],
+              },
+            ],
+          },
+          '/v1/openclash/connections' => {
+            'connectionList': [
+              {
+                'id': 'abc-123',
+                'metadata': {'host': 'example.com', 'destinationPort': '443'},
+                'chains': ['Node 1', 'Proxy Select'],
+                'rule': 'MATCH',
+                'upload': 10,
+                'download': 20,
+              },
+            ],
+          },
+          '/v1/openclash/select' => {'changed': true},
+          '/v1/openclash/test-delay' => {'delay': 88},
+          '/v1/openclash/close' => {'closed': true},
+          '/v1/files/list' => {
+            'path': '',
+            'entries': [
+              {'name': 'docs', 'path': 'docs', 'directory': true, 'size': 0},
+              {
+                'name': 'note.txt',
+                'path': 'note.txt',
+                'directory': false,
+                'size': 5,
+              },
+            ],
+          },
+          '/v1/files/download' => {
+            'name': 'note.txt',
+            'size': 5,
+            'base64': 'aGVsbG8=',
           },
           '/v1/network' => {
             'interfaces': [
@@ -87,7 +148,7 @@ void main() {
     });
   });
 
-  tearDownAll(() => server.close(force: true));
+  tearDown(() => server.close(force: true));
 
   ILinkProfile profile({String token = _token, String? fingerprint}) =>
       ILinkProfile(
@@ -114,13 +175,31 @@ void main() {
     );
   });
 
+  test('OpenClash and file services use fixed HTTPS routes', () async {
+    final client = ILinkGatewayClient()..configure(profile());
+    final proxy = await OpenClashService(client).load();
+    expect(proxy.groups.single.nodes.single.delay, 88);
+    expect(proxy.connections.single.host, 'example.com:443');
+    expect(proxy.configName, 'test.yaml');
+    await OpenClashService(client).select('Proxy Select', 'Node 1');
+    expect(await OpenClashService(client).testDelay('Node 1'), 88);
+
+    final files = FileService(client);
+    expect((await files.list('')).last.name, 'note.txt');
+    expect(String.fromCharCodes(await files.download('note.txt')), 'hello');
+  });
+
   test('invalid device token never falls back to another endpoint', () async {
     await expectLater(
       ILinkGatewayClient().load(profile(token: 'b' * 64)),
       throwsA(
         isA<ILinkApiException>()
             .having((error) => error.statusCode, 'statusCode', 401)
-            .having((error) => error.isAuthentication, 'isAuthentication', true),
+            .having(
+              (error) => error.isAuthentication,
+              'isAuthentication',
+              true,
+            ),
       ),
     );
   });

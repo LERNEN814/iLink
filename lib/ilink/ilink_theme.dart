@@ -30,6 +30,26 @@ abstract final class ILinkTheme {
 
 // The dashboard and tools glyphs are adapted from FlClash (GPL-3.0).
 abstract final class ILinkGlyphs {
+  static const proxy = Glyph([
+    GlyphCircle(12, 12, 8.8),
+    GlyphOval(8.2, 3.2, 15.8, 20.8, role: GlyphRole.detail),
+    GlyphPolyline([
+      GlyphVertex(3.2, 12),
+      GlyphVertex(20.8, 12),
+    ], role: GlyphRole.detail),
+  ]);
+
+  static const files = Glyph([
+    GlyphPolyline([
+      GlyphVertex(3.5, 6.5, 2.5),
+      GlyphVertex(10, 6.5),
+      GlyphVertex(13, 3.5),
+      GlyphVertex(20.5, 3.5, 2.5),
+      GlyphVertex(20.5, 20.5, 2.5),
+      GlyphVertex(3.5, 20.5, 2.5),
+    ], closed: true),
+  ]);
+
   static const dashboard = Glyph([
     GlyphBox(3.5, 3.5, 10.5, 11.5, 2),
     GlyphBox(13.5, 3.5, 20.5, 9.5, 2),

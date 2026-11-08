@@ -1,7 +1,7 @@
 name: luci_mobile
 description: "iLink: a private iStoreOS management app based on LuCI Mobile"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.10.0
@@ -17,6 +17,7 @@ dependencies:
   dio: ^5.4.0
   flutter_secure_storage: ^11.0.0
   package_info_plus: ^10.2.1
+  path_provider: ^2.1.6
   url_launcher: ^6.3.0
   crypto: ^3.0.7
   intl: ^0.20.2

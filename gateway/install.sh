@@ -4,7 +4,7 @@ set -eu
 # Run only after reviewing the DDNSTO and security notes in README.md.
 [ "$(id -u)" = 0 ] || { echo "Run as root" >&2; exit 1; }
 BASE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-for file in gateway.lua gateway.cgi ubus-acl.json rpcd-acl.json ilink.init; do
+for file in gateway.lua gateway.cgi module.cgi urlcode.lua openclash.lua files.lua ubus-acl.json rpcd-acl.json ilink.init; do
     [ -f "$BASE/$file" ] || { echo "Missing $file" >&2; exit 1; }
 done
 for command in uhttpd lua openssl useradd groupadd chpasswd uci; do
@@ -30,6 +30,32 @@ cp /etc/uhttpd.key /etc/ilink/uhttpd.key
 chown root:ilink /etc/ilink/uhttpd.crt /etc/ilink/uhttpd.key
 chmod 0640 /etc/ilink/uhttpd.crt /etc/ilink/uhttpd.key
 cp "$BASE/gateway.lua" /usr/lib/ilink/gateway.lua
+for module in urlcode openclash files; do
+    cp "$BASE/$module.lua" "/usr/lib/ilink/$module.lua"
+    chown root:ilink "/usr/lib/ilink/$module.lua"
+    chmod 0750 "/usr/lib/ilink/$module.lua"
+done
+for directory in openclash files; do
+    mkdir -p "/usr/lib/ilink/www/v1/$directory"
+    chown root:ilink "/usr/lib/ilink/www/v1/$directory"
+    chmod 0750 "/usr/lib/ilink/www/v1/$directory"
+done
+for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close files/list files/mkdir files/rename files/remove files/download; do
+    cp "$BASE/module.cgi" "/usr/lib/ilink/www/v1/$endpoint"
+    chown root:ilink "/usr/lib/ilink/www/v1/$endpoint"
+    chmod 0751 "/usr/lib/ilink/www/v1/$endpoint"
+done
+SECRET=$(uci -q get openclash.config.dashboard_password || true)
+if [ -n "$SECRET" ]; then
+    printf '%s\n' "$SECRET" > /etc/ilink/clash_secret
+    chown root:ilink /etc/ilink/clash_secret
+    chmod 0640 /etc/ilink/clash_secret
+fi
+CONFIG=$(uci -q get openclash.config.config_path || true)
+if [ -n "$CONFIG" ]; then printf '%s\n' "$CONFIG" > /etc/ilink/clash_config; fi
+chown root:ilink /etc/ilink/clash_config
+chmod 0640 /etc/ilink/clash_config
+unset SECRET CONFIG
 chown root:ilink /usr/lib/ilink/gateway.lua
 chmod 0750 /usr/lib/ilink/gateway.lua
 for endpoint in status clients network; do

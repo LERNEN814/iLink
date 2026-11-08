@@ -20,7 +20,7 @@ start_service() {
         -h /usr/lib/ilink/www -x /v1 \
         -p 127.0.0.1:8089 -s "$lan_ip:8443" \
         -C /etc/ilink/uhttpd.crt -K /etc/ilink/uhttpd.key \
-        -n 4 -N 16 -t 5 -T 10
+        -n 4 -N 16 -t 120 -T 10
     procd_set_param respawn 3600 5 5
     procd_set_param stderr 1
     procd_close_instance

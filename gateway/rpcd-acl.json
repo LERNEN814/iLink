@@ -4,6 +4,7 @@
     "read": {
       "ubus": {
         "system": [ "board", "info" ],
+        "luci": [ "getMountPoints" ],
         "luci-rpc": [ "getHostHints", "getWirelessDevices" ],
         "network.interface.lan": [ "status" ],
         "network.interface.wan": [ "status" ],

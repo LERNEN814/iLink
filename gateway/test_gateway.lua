@@ -37,6 +37,9 @@ package.preload["ubus"] = function()
                 if object == "luci-rpc" and method == "getWirelessDevices" then
                     return { radio0 = { interfaces = { { config = { ssid = "test-wifi" }, iwinfo = {} } } } }
                 end
+                if object == "luci" and method == "getMountPoints" then
+                    return { { mount = "/mnt/data_sdb1", available = 1000, size = 2000 } }
+                end
                 if object:match("^network%.interface%.") then
                     return { interface = object:gsub("network%.interface%.", ""), up = true }
                 end
@@ -46,6 +49,15 @@ package.preload["ubus"] = function()
         }
     end }
 end
+package.preload["openclash"] = function()
+    return { status = function() return { running = true } end }
+end
+package.preload["files"] = function()
+    return { list = function(body)
+        assert(body.path == "docs")
+        return { entries = {} }
+    end }
+end
 _G.uhttpd = { send = function(value)
     output = (output or "") .. value
     output_code = tonumber(output:match("^Status: (%d+)"))
@@ -53,12 +65,13 @@ end }
 
 assert(loadfile("gateway/gateway.lua"))()
 
-local function request(path, authorization, method)
+local function request(path, authorization, method, request_body)
     output, output_code = nil, nil
     handle_request({
         PATH_INFO = path,
         REQUEST_METHOD = method or "GET",
-        HTTP_AUTHORIZATION = authorization
+        HTTP_AUTHORIZATION = authorization,
+        REQUEST_BODY = request_body or "{}"
     })
     assert(output, "missing response")
     return output_code, output
@@ -80,6 +93,14 @@ code = request("/ubus", "Bearer " .. token)
 assert(code == 404 and calls == before, "generic ubus must not be routed")
 code = request("/cgi-bin/luci", "Bearer " .. token)
 assert(code == 404 and calls == before, "LuCI must not be routed")
+code = request("/v1/openclash/status", "Bearer " .. token)
+assert(code == 200, "fixed OpenClash route must work")
+code = request("/v1/files/list", "Bearer " .. token, "POST", '{"path":"docs"}')
+assert(code == 200, "fixed file route must work")
+code = request("/v1/files/list", "Bearer " .. token)
+assert(code == 405, "file mutations must not be accepted over GET")
+code = request("/v1/openclash/unknown", "Bearer " .. token)
+assert(code == 404, "unknown controller routes must not be proxied")
 code, body = request("/clients", "Bearer " .. token)
 assert(code == 200 and body:find("192%.0%.2%.2"))
 code, body = request("/network", "Bearer " .. token)

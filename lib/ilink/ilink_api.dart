@@ -13,7 +13,6 @@ class ILinkApiException implements Exception {
 
   final String message;
   final int? statusCode;
-
   bool get isAuthentication => statusCode == 401 || statusCode == 403;
 
   @override
@@ -24,6 +23,11 @@ class ILinkGatewayClient {
   static const _statusPath = '/v1/status';
   static const _clientsPath = '/v1/clients';
   static const _networkPath = '/v1/network';
+
+  ILinkProfile? _profile;
+  String _lastTransport = 'DDNSTO';
+
+  void configure(ILinkProfile profile) => _profile = profile;
 
   static String? validateBaseUrl(String value, {required bool remote}) {
     final input = value.trim();
@@ -61,15 +65,16 @@ class ILinkGatewayClient {
     return null;
   }
 
-  Dio _dio(String baseUrl, {String fingerprint = ''}) {
+  Dio _dio(String baseUrl, String token, {String fingerprint = ''}) {
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
         connectTimeout: const Duration(seconds: 7),
-        receiveTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 15),
         sendTimeout: const Duration(seconds: 7),
         responseType: ResponseType.json,
         followRedirects: false,
+        headers: {'Authorization': 'Bearer ${token.trim()}'},
         validateStatus: (_) => true,
       ),
     );
@@ -92,109 +97,150 @@ class ILinkGatewayClient {
     return dio;
   }
 
-  Future<ILinkData> load(ILinkProfile profile) async {
+  List<({String url, String transport})> _endpoints(ILinkProfile profile) => [
+    if (profile.lanUrl.trim().isNotEmpty)
+      (url: profile.lanUrl.trim(), transport: 'LAN'),
+    (url: profile.remoteUrl.trim(), transport: 'DDNSTO'),
+  ];
+
+  Future<T> _request<T>(
+    ILinkProfile profile,
+    Future<T> Function(Dio) action,
+  ) async {
     final validation = validateConfiguration(profile);
     if (validation != null) throw ILinkApiException(validation);
-    final endpoints = <({String url, String transport})>[
-      if (profile.lanUrl.trim().isNotEmpty)
-        (url: profile.lanUrl.trim(), transport: 'LAN'),
-      (url: profile.remoteUrl.trim(), transport: 'DDNSTO'),
-    ];
     Object? lastError;
-    for (final endpoint in endpoints) {
+    for (final endpoint in _endpoints(profile)) {
+      final dio = _dio(
+        endpoint.url,
+        profile.token,
+        fingerprint: endpoint.transport == 'LAN'
+            ? profile.certificateSha256
+            : '',
+      );
       try {
-        return await _loadAt(profile, endpoint.url, endpoint.transport);
+        final result = await action(dio);
+        _lastTransport = endpoint.transport;
+        return result;
+      } on DioException catch (error) {
+        final code = error.response?.statusCode;
+        if (code == 401 || code == 403) {
+          throw ILinkApiException('设备凭据无效或已被撤销', code);
+        }
+        lastError = ILinkApiException(_dioMessage(error));
+        if (endpoint == _endpoints(profile).last) {
+          throw lastError;
+        }
+        await Future<void>.delayed(Duration.zero);
+      } on HandshakeException catch (error) {
+        lastError = error;
+        if (endpoint == _endpoints(profile).last) {
+          throw const ILinkApiException('证书校验失败，请核对 LAN 证书 SHA-256 指纹');
+        }
       } catch (error) {
         lastError = error;
         if (error is ILinkApiException && error.isAuthentication) rethrow;
+      } finally {
+        dio.close();
       }
     }
     if (lastError is ILinkApiException) throw lastError;
     throw const ILinkApiException('无法连接网关，请检查 DDNSTO、地址和证书指纹');
   }
 
-  Future<ILinkData> _loadAt(
-    ILinkProfile profile,
-    String baseUrl,
-    String transport,
-  ) async {
-    final dio = _dio(
-      baseUrl,
-      fingerprint: transport == 'LAN' ? profile.certificateSha256 : '',
-    );
-    try {
-      final responses = await Future.wait([
-        _get(dio, _statusPath, profile.token),
-        _get(dio, _clientsPath, profile.token),
-        _get(dio, _networkPath, profile.token),
-      ]);
-      final status = responses[0];
-      final clientRows = responses[1]['clients'] as List? ?? const [];
-      final interfaceRows = responses[2]['interfaces'] as List? ?? const [];
-      final wirelessRows = responses[2]['wireless'] as List? ?? const [];
-      return ILinkData(
-        status: status,
-        clients: clientRows
-            .whereType<Map>()
-            .map((row) => Client.fromLease(Map<String, dynamic>.from(row)))
-            .toList(),
-        interfaces: interfaceRows
-            .whereType<Map>()
-            .map(
-              (row) =>
-                  NetworkInterface.fromJson(Map<String, dynamic>.from(row)),
-            )
-            .toList(),
-        wireless: wirelessRows
-            .whereType<Map>()
-            .map(
-              (row) => WirelessNetwork.fromJson(Map<String, dynamic>.from(row)),
-            )
-            .toList(),
-        transport: transport,
-        fetchedAt: DateTime.now(),
-      );
-    } on DioException catch (error) {
-      if (error.error is HandshakeException ||
-          error.error is CertificateException) {
-        throw const ILinkApiException('证书校验失败，请核对 LAN 证书 SHA-256 指纹');
-      }
-      throw ILinkApiException(_dioMessage(error));
-    } finally {
-      dio.close();
-    }
-  }
-
-  Future<Map<String, dynamic>> _get(Dio dio, String path, String token) async {
-    final response = await dio.get<dynamic>(
-      path,
-      options: Options(headers: {'Authorization': 'Bearer ${token.trim()}'}),
-    );
-    final statusCode = response.statusCode ?? 0;
+  Future<Map<String, dynamic>> _parse(Response<dynamic> response) async {
+    final code = response.statusCode ?? 0;
     final body = response.data;
     final map = body is Map<String, dynamic>
         ? body
         : body is String
         ? jsonDecode(body) as Map<String, dynamic>
         : <String, dynamic>{};
-    if (statusCode == 401 || statusCode == 403) {
-      throw ILinkApiException('设备凭据无效或已被撤销', statusCode);
+    if (code == 401 || code == 403) {
+      throw ILinkApiException('设备凭据无效或已被撤销', code);
     }
-    if (statusCode == 429) {
-      throw const ILinkApiException('请求过于频繁，请稍后重试', 429);
-    }
-    if (statusCode != 200) {
-      throw ILinkApiException('网关返回错误（$statusCode）', statusCode);
-    }
+    if (code == 429) throw const ILinkApiException('请求过于频繁，请稍后重试', 429);
+    if (code != 200) throw ILinkApiException('网关返回错误（$code）', code);
     if (map['apiVersion'] != 1 || map['data'] is! Map<String, dynamic>) {
       throw const ILinkApiException('网关协议不兼容，请升级路由器端组件');
     }
     return Map<String, dynamic>.from(map['data'] as Map);
   }
 
+  Future<Map<String, dynamic>> _get(Dio dio, String path) async =>
+      _parse(await dio.get<dynamic>(path));
+
+  Future<Map<String, dynamic>> json(
+    String method,
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
+    var route = path.startsWith('v1/') ? path : 'v1/$path';
+    if (route.startsWith('/')) route = route.substring(1);
+    if (route.contains('..') ||
+        route.contains(RegExp(r'[?#\\]')) ||
+        !RegExp(r'^v1/[a-z0-9/-]+$').hasMatch(route)) {
+      throw const ILinkApiException('无效网关路径');
+    }
+    final profile = _profile;
+    if (profile == null) throw const ILinkApiException('尚未配置连接');
+    return _request(
+      profile,
+      (dio) async => _parse(
+        await dio.request<dynamic>(
+          '/$route',
+          data: body,
+          options: Options(
+            method: method,
+            receiveTimeout: route == 'v1/files/download'
+                ? const Duration(minutes: 5)
+                : const Duration(seconds: 15),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<ILinkData> load(ILinkProfile profile) async {
+    _profile = profile;
+    final responses = await _request(
+      profile,
+      (dio) => Future.wait([
+        _get(dio, _statusPath),
+        _get(dio, _clientsPath),
+        _get(dio, _networkPath),
+      ]),
+    );
+    return ILinkData(
+      status: responses[0],
+      clients: (responses[1]['clients'] as List? ?? const [])
+          .whereType<Map>()
+          .map((row) => Client.fromLease(Map<String, dynamic>.from(row)))
+          .toList(),
+      interfaces: (responses[2]['interfaces'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (row) => NetworkInterface.fromJson(Map<String, dynamic>.from(row)),
+          )
+          .toList(),
+      wireless: (responses[2]['wireless'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (row) => WirelessNetwork.fromJson(Map<String, dynamic>.from(row)),
+          )
+          .toList(),
+      transport: _lastTransport,
+      fetchedAt: DateTime.now(),
+    );
+  }
+
   String _dioMessage(DioException error) {
     final code = error.response?.statusCode;
     if (code != null) return '网关连接失败（HTTP $code）';
+    if (error.error is HandshakeException ||
+        error.error is CertificateException) {
+      return '证书校验失败，请核对 LAN 证书 SHA-256 指纹';
+    }
     return switch (error.type) {
       DioExceptionType.connectionTimeout ||
       DioExceptionType.receiveTimeout ||

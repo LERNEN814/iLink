@@ -7,6 +7,8 @@ import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 import 'package:luci_mobile/ilink/ilink_theme.dart';
 import 'package:luci_mobile/ilink/ilink_widgets.dart';
+import 'package:luci_mobile/ilink/proxy_page.dart';
+import 'package:luci_mobile/ilink/files_page.dart';
 
 class ILinkHome extends ConsumerStatefulWidget {
   const ILinkHome({super.key});
@@ -76,14 +78,14 @@ class _ILinkHomeState extends ConsumerState<ILinkHome>
 
     final pages = [
       const _Dashboard(),
-      const _Clients(),
-      const _Network(),
+      const ProxyPage(),
+      const FilesPage(),
       const _Tools(),
     ];
     final destinations = const [
       p.NavigationDockDestination(glyph: ILinkGlyphs.dashboard, label: '概览'),
-      p.NavigationDockDestination(glyph: ILinkGlyphs.clients, label: '客户端'),
-      p.NavigationDockDestination(glyph: ILinkGlyphs.network, label: '网络'),
+      p.NavigationDockDestination(glyph: ILinkGlyphs.proxy, label: '代理'),
+      p.NavigationDockDestination(glyph: ILinkGlyphs.files, label: '文件'),
       p.NavigationDockDestination(glyph: ILinkGlyphs.tools, label: '工具'),
     ];
     return p.Surface(
@@ -222,121 +224,92 @@ class _Dashboard extends ConsumerWidget {
             ],
           ),
         ),
+        const _Clients(embedded: true),
+        const _Network(embedded: true),
       ],
     );
   }
 }
 
 class _Clients extends ConsumerWidget {
-  const _Clients();
+  const _Clients({this.embedded = false});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(iLinkProvider);
     final clients = state.data!.clients;
+    final children = <Widget>[
+      ILinkSectionTitle('${clients.length} 台设备'),
+      if (clients.isEmpty)
+        const ILinkEmpty('暂未发现客户端')
+      else
+        for (final client in clients)
+          ILinkCard(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        client.hostname,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: p.AppTextStyle.headline.of(context),
+                      ),
+                    ),
+                    ILinkStatusPill(client.connectionLabel),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  client.ipAddress,
+                  style: p.AppTextStyle.subheadline.of(context),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  [
+                    client.macAddress,
+                    if (client.vendor?.isNotEmpty == true) client.vendor!,
+                  ].join(' · '),
+                  style: p.AppTextStyle.caption1
+                      .of(context)
+                      .copyWith(
+                        color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+    ];
+    if (embedded) return Column(children: children);
     return ILinkPage(
       title: '客户端',
       refreshing: state.refreshing,
       onRefresh: () => ref.read(iLinkProvider).refresh(),
-      children: [
-        ILinkSectionTitle('${clients.length} 台设备'),
-        if (clients.isEmpty)
-          const ILinkEmpty('暂未发现客户端')
-        else
-          for (final client in clients)
-            ILinkCard(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          client.hostname,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: p.AppTextStyle.headline.of(context),
-                        ),
-                      ),
-                      ILinkStatusPill(client.connectionLabel),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    client.ipAddress,
-                    style: p.AppTextStyle.subheadline.of(context),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    [
-                      client.macAddress,
-                      if (client.vendor?.isNotEmpty == true) client.vendor!,
-                    ].join(' · '),
-                    style: p.AppTextStyle.caption1
-                        .of(context)
-                        .copyWith(
-                          color: p.Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-      ],
+      children: children,
     );
   }
 }
 
 class _Network extends ConsumerWidget {
-  const _Network();
+  const _Network({this.embedded = false});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(iLinkProvider);
     final data = state.data!;
-    return ILinkPage(
-      title: '网络',
-      refreshing: state.refreshing,
-      onRefresh: () => ref.read(iLinkProvider).refresh(),
-      children: [
-        const ILinkSectionTitle('无线网络'),
-        if (data.wireless.isEmpty)
-          const ILinkEmpty('未获取到无线网络信息')
-        else
-          for (final wifi in data.wireless)
-            ILinkCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          wifi.ssid,
-                          style: p.AppTextStyle.headline.of(context),
-                        ),
-                      ),
-                      ILinkStatusPill(wifi.up ? '已启用' : '已停用', online: wifi.up),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  ILinkKeyValue('射频', wifi.radio),
-                  ILinkKeyValue('模式', wifi.mode),
-                  ILinkKeyValue(
-                    '频段 / 信道',
-                    '${wifi.band.isEmpty ? '—' : wifi.band} / ${wifi.channel == 0 ? '自动' : wifi.channel}',
-                  ),
-                  ILinkKeyValue(
-                    '加密',
-                    wifi.encryption.isEmpty ? '—' : wifi.encryption,
-                  ),
-                ],
-              ),
-            ),
-        const ILinkSectionTitle('网络接口'),
-        for (final interface in data.interfaces)
+    final children = <Widget>[
+      const ILinkSectionTitle('无线网络'),
+      if (data.wireless.isEmpty)
+        const ILinkEmpty('未获取到无线网络信息')
+      else
+        for (final wifi in data.wireless)
           ILinkCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -345,25 +318,62 @@ class _Network extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        interface.name,
+                        wifi.ssid,
                         style: p.AppTextStyle.headline.of(context),
                       ),
                     ),
-                    ILinkStatusPill(
-                      interface.isUp ? '已连接' : '未连接',
-                      online: interface.isUp,
-                    ),
+                    ILinkStatusPill(wifi.up ? '已启用' : '已停用', online: wifi.up),
                   ],
                 ),
                 const SizedBox(height: 10),
-                ILinkKeyValue('IPv4', interface.ipAddress ?? '—'),
-                ILinkKeyValue('协议', interface.protocol),
-                ILinkKeyValue('设备', interface.device),
-                ILinkKeyValue('网关', interface.gateway ?? '—'),
+                ILinkKeyValue('射频', wifi.radio),
+                ILinkKeyValue('模式', wifi.mode),
+                ILinkKeyValue(
+                  '频段 / 信道',
+                  '${wifi.band.isEmpty ? '—' : wifi.band} / ${wifi.channel == 0 ? '自动' : wifi.channel}',
+                ),
+                ILinkKeyValue(
+                  '加密',
+                  wifi.encryption.isEmpty ? '—' : wifi.encryption,
+                ),
               ],
             ),
           ),
-      ],
+      const ILinkSectionTitle('网络接口'),
+      for (final interface in data.interfaces)
+        ILinkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      interface.name,
+                      style: p.AppTextStyle.headline.of(context),
+                    ),
+                  ),
+                  ILinkStatusPill(
+                    interface.isUp ? '已连接' : '未连接',
+                    online: interface.isUp,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ILinkKeyValue('IPv4', interface.ipAddress ?? '—'),
+              ILinkKeyValue('协议', interface.protocol),
+              ILinkKeyValue('设备', interface.device),
+              ILinkKeyValue('网关', interface.gateway ?? '—'),
+            ],
+          ),
+        ),
+    ];
+    if (embedded) return Column(children: children);
+    return ILinkPage(
+      title: '网络',
+      refreshing: state.refreshing,
+      onRefresh: () => ref.read(iLinkProvider).refresh(),
+      children: children,
     );
   }
 }
@@ -403,7 +413,7 @@ class _ToolsState extends ConsumerState<_Tools> {
                 '局域网',
                 state.profile!.lanUrl.isEmpty ? '未配置' : state.profile!.lanUrl,
               ),
-              ILinkKeyValue('安全', '独立设备凭据 · 只读接口'),
+              ILinkKeyValue('安全', '独立设备凭据 · 固定业务接口'),
               const SizedBox(height: 12),
               p.OutlinedButton(
                 onPressed: state.startEditing,
@@ -458,7 +468,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.1.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n所有管理接口均为只读',
+            'iLink v0.2.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

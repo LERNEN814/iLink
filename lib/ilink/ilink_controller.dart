@@ -21,6 +21,7 @@ class ILinkController extends ChangeNotifier {
   static const _storage = FlutterSecureStorage();
 
   final ILinkGatewayClient _client;
+  ILinkGatewayClient get client => _client;
   ILinkProfile? profile;
   ILinkData? data;
   bool initialized = false;

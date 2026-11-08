@@ -10,6 +10,9 @@
     "luci-rpc": {
       "methods": [ "getHostHints", "getWirelessDevices" ]
     },
+    "luci": {
+      "methods": [ "getMountPoints" ]
+    },
     "network.interface.lan": {
       "methods": [ "status" ]
     },

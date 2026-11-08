@@ -4,7 +4,22 @@
 
 ## 安全边界
 
-- 只提供 `GET /v1/status`、`GET /v1/clients`、`GET /v1/network`。
+只读接口（v0.1）：
+
+- `GET /v1/status`、`GET /v1/clients`、`GET /v1/network`。
+
+OpenClash 接口（v0.2，密钥留在路由器）：
+
+- `GET /v1/openclash/status`、`GET /v1/openclash/groups`、`GET /v1/openclash/connections`
+- `POST /v1/openclash/select`、`POST /v1/openclash/test-delay`、`POST /v1/openclash/close`
+
+文件接口（v0.2，限定 `/mnt/data_sdb1`）：
+
+- `POST /v1/files/list`、`mkdir`、`rename`、`remove`、`download`
+
+固定规则：
+
+- 控制器密钥只存于 `/etc/ilink/clash_secret`（root:ilink 0640），从不返回给客户端。
 - 不提供 `/ubus`、LuCI、SSH、文件、shell、UCI 写入或通用 RPC 转发。
 - 手机使用独立的 64 位十六进制 token；Android 将其保存在 Keystore 支持的安全存储中。
 - 路由器内部使用无 shell 的 `ilink` 用户，仅可读取本版本需要的 RPC；无 UCI 权限。
@@ -68,4 +83,10 @@ sh test.sh
 
 ## 范围
 
-v0.1 仅只读：系统状态、DHCP/host-hints 客户端、LAN/WAN/WAN6 接口和无线信息。软件中心、文件管理、Wi-Fi 修改、重启和备份恢复均不在本版本。后续每个写操作都应单独增加业务接口、参数校验和回滚，不能开放通用 RPC。
+- v0.1：系统状态、DHCP/host-hints 客户端、LAN/WAN/WAN6 接口和无线信息。
+- v0.2：上述内容，加上 OpenClash 节点切换/测速/连接断开，以及 `/mnt/data_sdb1`
+  下的目录浏览、建目录、重命名、删除空目录、下载（上限 32 MB）。
+- 不在范围：文件上传与预览、配置切换、OpenClash 启停、Wi-Fi 修改、重启、备份恢复。
+
+文件接口对每次调用做规范化路径检查，拒绝 `..`、绝对路径、反斜杠与符号链接；
+`download` 仅调用系统固定命令 `/usr/bin/base64` 且路径经过 shell 转义，不接受调用方命令。

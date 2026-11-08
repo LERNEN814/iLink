@@ -1,4 +1,4 @@
--- iLink v0.1: fixed, read-only API. No caller-supplied RPC names or commands.
+-- iLink v0.2: fixed, read-only API. No caller-supplied RPC names or commands.
 local json = require "luci.jsonc"
 local ubus = require "ubus"
 local fs = require "nixio.fs"
@@ -21,7 +21,7 @@ local function token_matches(presented, expected)
         return false
     end
     -- Fixed-work comparison; length is checked only after every byte is read.
-    local difference = #presented ~=#expected and 1 or 0
+    local difference = #presented ~= #expected and 1 or 0
     for index = 1, 64 do
         if presented:byte(index) ~= expected:byte(index) then
             difference = difference + 1
@@ -75,6 +75,7 @@ local function status()
     local connection = connect()
     local board = call(connection, "system", "board")
     local info = call(connection, "system", "info")
+    local mounts = call(connection, "luci", "getMountPoints")
     connection:close()
     return {
         hostname = board.hostname,
@@ -84,7 +85,8 @@ local function status()
         uptime = info.uptime,
         localtime = info.localtime,
         load = info.load,
-        memory = info.memory
+        memory = info.memory,
+        mounts = mounts
     }
 end
 
@@ -151,7 +153,7 @@ local routes = {
 }
 
 local status_text = {
-    [200] = "OK", [401] = "Unauthorized", [404] = "Not Found",
+    [200] = "OK", [400] = "Bad Request", [401] = "Unauthorized", [404] = "Not Found",
     [405] = "Method Not Allowed", [429] = "Too Many Requests",
     [503] = "Service Unavailable"
 }
@@ -167,12 +169,43 @@ local function respond(code, value)
     send(body)
 end
 
+local module_routes = {
+    ["openclash/status"] = { module = "openclash", action = "status", method = "GET" },
+    ["openclash/groups"] = { module = "openclash", action = "groups", method = "GET" },
+    ["openclash/connections"] = { module = "openclash", action = "connections", method = "GET" },
+    ["openclash/select"] = { module = "openclash", action = "select", method = "POST" },
+    ["openclash/test-delay"] = { module = "openclash", action = "test_delay", method = "POST" },
+    ["openclash/close"] = { module = "openclash", action = "close", method = "POST" },
+    ["files/list"] = { module = "files", action = "list", method = "POST" },
+    ["files/mkdir"] = { module = "files", action = "mkdir", method = "POST" },
+    ["files/rename"] = { module = "files", action = "rename", method = "POST" },
+    ["files/remove"] = { module = "files", action = "remove", method = "POST" },
+    ["files/download"] = { module = "files", action = "download", method = "POST" }
+}
+
 function handle_request(env)
     local path = env.PATH_INFO or ""
     local handler = routes[path]
+    local body = {}
+    local module = module_routes[path:match("^/v1/(.+)$") or ""]
+    if not handler and module then
+        handler = function()
+            return require(module.module)[module.action](body)
+        end
+    end
     if not handler then return respond(404, { error = "not_found" }) end
-    if env.REQUEST_METHOD ~= "GET" then
+    if module and env.REQUEST_METHOD ~= module.method then
         return respond(405, { error = "method_not_allowed" })
+    end
+    if not module and env.REQUEST_METHOD ~= "GET" then
+        return respond(405, { error = "method_not_allowed" })
+    end
+    if module and module.method == "POST" then
+        local ok, decoded = pcall(json.parse, env.REQUEST_BODY or "{}")
+        if not ok or type(decoded) ~= "table" then
+            return respond(400, { error = "invalid_json" })
+        end
+        body = decoded
     end
     local now = os.time()
     if now ~= bucket_at then bucket_at, bucket_count = now, 0 end
@@ -185,7 +218,8 @@ function handle_request(env)
 
     local ok, data = pcall(handler)
     if not ok then
-        audit("internal request failed")
+        -- Diagnostics go to the system log, never to the caller.
+        audit("failed " .. path .. ": " .. tostring(data))
         return respond(503, { error = "unavailable" })
     end
     return respond(200, { apiVersion = 1, data = data })
