@@ -89,7 +89,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(
       find.text(
-        'iLink v0.4.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+        'iLink v0.5.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
       ),
       findsOneWidget,
     );

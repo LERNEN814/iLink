@@ -145,6 +145,22 @@ class OpenClashData {
   }
 }
 
+class FastNetResult {
+  const FastNetResult({required this.summary, required this.logs});
+
+  final Map<String, dynamic> summary;
+  final List<String> logs;
+
+  bool get failed => summary['error'] != null;
+
+  factory FastNetResult.fromJson(Map<String, dynamic> json) => FastNetResult(
+    summary: Map<String, dynamic>.from(
+      json['summary'] as Map? ?? const <String, dynamic>{},
+    ),
+    logs: (json['logs'] as List? ?? const []).map((item) => '$item').toList(),
+  );
+}
+
 class FilePreview {
   const FilePreview({required this.kind, this.content, this.base64, this.mime});
 

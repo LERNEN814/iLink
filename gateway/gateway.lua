@@ -189,7 +189,10 @@ local module_routes = {
     ["files/upload"] = { module = "files", action = "upload", method = "POST" },
     ["files/copy"] = { module = "files", action = "copy", method = "POST" },
     ["files/move"] = { module = "files", action = "move", method = "POST" },
-    ["files/preview"] = { module = "files", action = "preview", method = "POST" }
+    ["files/preview"] = { module = "files", action = "preview", method = "POST" },
+    ["fastnet/quick"] = { module = "fastnet", action = "quick", method = "GET" },
+    ["fastnet/nat"] = { module = "fastnet", action = "nat", method = "GET" },
+    ["fastnet/ipv6"] = { module = "fastnet", action = "ipv6", method = "GET" }
 }
 
 function handle_request(env)

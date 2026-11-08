@@ -197,6 +197,8 @@ class ILinkGatewayClient {
             method: method,
             receiveTimeout: route == 'v1/files/download'
                 ? const Duration(minutes: 5)
+                : route.startsWith('v1/fastnet/')
+                ? const Duration(minutes: 3)
                 : const Duration(seconds: 15),
           ),
         ),

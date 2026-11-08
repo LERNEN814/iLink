@@ -6,6 +6,8 @@ import 'package:prism_ui/prism_ui.dart' as p;
 import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 import 'package:luci_mobile/ilink/ilink_theme.dart';
+import 'package:luci_mobile/ilink/ilink_feature_api.dart';
+import 'package:luci_mobile/ilink/ilink_feature_models.dart';
 import 'package:luci_mobile/ilink/ilink_widgets.dart';
 import 'package:luci_mobile/ilink/proxy_page.dart';
 import 'package:luci_mobile/ilink/files_page.dart';
@@ -427,6 +429,147 @@ class _Tools extends ConsumerStatefulWidget {
 
 class _ToolsState extends ConsumerState<_Tools> {
   bool _confirmClear = false;
+  FastNetResult? _fastNet;
+  String? _fastNetLabel;
+  bool _fastNetBusy = false;
+
+  Future<void> _runFastNet(String kind) async {
+    final service = FastNetService(ref.read(iLinkProvider).client);
+    setState(() {
+      _fastNetBusy = true;
+      _fastNetLabel = switch (kind) {
+        'nat' => 'NAT 检测',
+        'ipv6' => 'IPv6 检测',
+        _ => '快速体检',
+      };
+      _fastNet = null;
+    });
+    try {
+      final result = switch (kind) {
+        'nat' => await service.nat(),
+        'ipv6' => await service.ipv6(),
+        _ => await service.quick(),
+      };
+      if (mounted) setState(() => _fastNet = result);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _fastNet = FastNetResult(
+            summary: {'error': error.toString()},
+            logs: const [],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _fastNetBusy = false);
+    }
+  }
+
+  Widget _fastNetCard() {
+    final result = _fastNet;
+    final summary = result?.summary ?? const <String, dynamic>{};
+    final ping = (summary['pingMs'] as num?)?.toStringAsFixed(1);
+    final jitter = (summary['jitterMs'] as num?)?.toStringAsFixed(1);
+    final down = (summary['downloadBps'] as num?)?.toDouble();
+    final up = (summary['uploadBps'] as num?)?.toDouble();
+    return ILinkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('网络体检', style: p.AppTextStyle.headline.of(context)),
+          const SizedBox(height: 6),
+          Text(
+            '在路由器上测速，会短暂占用带宽并消耗流量。',
+            style: p.AppTextStyle.caption1
+                .of(context)
+                .copyWith(
+                  color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: p.OutlinedButton(
+                  onPressed: _fastNetBusy ? null : () => _runFastNet('quick'),
+                  child: const Text('快速体检'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: p.OutlinedButton(
+                  onPressed: _fastNetBusy ? null : () => _runFastNet('nat'),
+                  child: const Text('NAT'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: p.OutlinedButton(
+                  onPressed: _fastNetBusy ? null : () => _runFastNet('ipv6'),
+                  child: const Text('IPv6'),
+                ),
+              ),
+            ],
+          ),
+          if (_fastNetBusy) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const p.ActivityIndicator(size: 18),
+                const SizedBox(width: 10),
+                Text(
+                  '正在执行${_fastNetLabel ?? '检测'}…',
+                  style: p.AppTextStyle.footnote.of(context),
+                ),
+              ],
+            ),
+          ],
+          if (result != null) ...[
+            const SizedBox(height: 12),
+            if (ping != null) ILinkKeyValue('延迟', '$ping ms（抖动 $jitter ms）'),
+            if (down != null) ILinkKeyValue('下载', '${formatBytes(down / 8)}/s'),
+            if (up != null) ILinkKeyValue('上传', '${formatBytes(up / 8)}/s'),
+            for (final entry in summary.entries)
+              if (!const {
+                'pingMs',
+                'jitterMs',
+                'downloadBps',
+                'uploadBps',
+              }.contains(entry.key))
+                ILinkKeyValue(entry.key, '${entry.value}'),
+            if (result.logs.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: ShapeDecoration(
+                  color: p.SurfaceLevel.inset.colorOf(
+                    p.Theme.of(context).colorScheme,
+                  ),
+                  shape: p.AppShape.all(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final line in result.logs.reversed.take(6))
+                      Text(
+                        line,
+                        style: p.AppTextStyle.caption1
+                            .of(context)
+                            .copyWith(
+                              color: p.Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -462,6 +605,8 @@ class _ToolsState extends ConsumerState<_Tools> {
             ],
           ),
         ),
+        const ILinkSectionTitle('网络体检'),
+        _fastNetCard(),
         const ILinkSectionTitle('外观'),
         ILinkCard(
           child: Column(
@@ -508,7 +653,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.4.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.5.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

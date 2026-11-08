@@ -134,6 +134,15 @@ void main() {
               },
             ],
           },
+          '/v1/fastnet/quick' => {
+            'summary': {
+              'pingMs': 33.9,
+              'downloadBps': 530256000,
+              'natError': 'stun timeout',
+            },
+            'logs': ['=== 快速体检开始 ===', '下载速度：530.3 Mbps'],
+            'stages': [],
+          },
           '/v1/files/download' => {
             'name': 'note.txt',
             'size': 5,
@@ -213,6 +222,12 @@ void main() {
     expect(proxy.configName, 'test.yaml');
     await OpenClashService(client).select('Proxy Select', 'Node 1');
     expect(await OpenClashService(client).testDelay('Node 1'), 88);
+
+    final fastNet = await FastNetService(client).quick();
+    expect(fastNet.summary['pingMs'], 33.9);
+    expect(fastNet.summary['natError'], 'stun timeout');
+    expect(fastNet.logs.length, 2);
+    expect(fastNet.failed, isFalse);
 
     final files = FileService(client);
     expect((await files.list('')).last.name, 'note.txt');

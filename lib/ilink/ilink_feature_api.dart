@@ -96,6 +96,26 @@ class OpenClashService {
   }
 }
 
+class FastNetService {
+  FastNetService(this.client) : _fake = null;
+
+  /// In-memory result for widget tests.
+  FastNetService.fake(FastNetResult result) : client = null, _fake = result;
+
+  final ILinkGatewayClient? client;
+  final FastNetResult? _fake;
+
+  Future<FastNetResult> quick() => _run('fastnet/quick');
+  Future<FastNetResult> nat() => _run('fastnet/nat');
+  Future<FastNetResult> ipv6() => _run('fastnet/ipv6');
+
+  Future<FastNetResult> _run(String path) async {
+    final fake = _fake;
+    if (fake != null) return fake;
+    return FastNetResult.fromJson(await client!.json('GET', path));
+  }
+}
+
 class FileService {
   FileService(this.client) : _fakeEntries = null;
 
