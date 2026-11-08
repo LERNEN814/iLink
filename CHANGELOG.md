@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.5.1 — 2026-11-09
+
+AList 接入。**需要更新网关**。
+
+### 文件页
+
+- 新增来源切换：**路由器存储 / AList**。
+- AList 侧支持：浏览（含虚拟根下各存储）、新建文件夹、上传、重命名、删除、下载。
+- AList 数据与本地存储分开维护路径与返回层级，互不干扰。
+- 路由器存储专属的「复制/移动」在 AList 下隐藏。
+
+### 网关
+
+- 新增 `alist/{list,mkdir,rename,remove,upload,download}`，固定路径。
+- 凭据只存于路由器 `/etc/ilink/alist_credentials`（root:ilink 0640），
+  App 不保存 AList 密码，也不经手任何凭据。
+- token 在网关内缓存 1 小时；路径拒绝 `..`、反斜杠与控制字符。
+- 上传上限 32 MB；下载经本机 `raw_url` 取回后转 Base64。
+
+### 验证（真机）
+
+- 登录成功，账号为非管理员（role 0），根目录仅见授权存储。
+- 六个接口逐一通过：list / mkdir / upload / download / rename / remove。
+- 越权路径 `/../etc` 被拒。
+- 实测根目录 1 项、`/video` 42 项，上传 12 字节与下载内容一致。
+
 ## v0.5.0 — 2026-11-09
 
 FastNet 网络体检接入。**需要更新网关**。

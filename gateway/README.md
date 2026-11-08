@@ -14,6 +14,7 @@ OpenClash 接口（v0.2，密钥留在路由器）：
 - `POST /v1/openclash/select`、`POST /v1/openclash/test-delay`、`POST /v1/openclash/close`
 - `GET /v1/openclash/overview`（状态 + 代理组，一次往返）
 - `GET /v1/fastnet/{quick,nat,ipv6}`（代理本机 FastNet 测速）
+- `POST /v1/alist/{list,mkdir,rename,remove,upload,download}`（AList 桥接）
 - `GET /v1/openclash/configs`
 - `POST /v1/openclash/mode`、`POST /v1/openclash/service`、`POST /v1/openclash/switch-config`
 
@@ -94,6 +95,7 @@ sh test.sh
 - v0.3：新增文件上传/复制/移动/预览，OpenClash 模式切换、服务启停与配置切换。
 - v0.4：新增 `openclash/overview` 合并接口，并裁剪代理组响应字段。
 - v0.5：新增 FastNet 体检代理（固定路径，SSE 汇总为 JSON）。
+- v0.5.1：新增 AList 桥接，凭据仅存路由器。
 - 不在范围：目录树复制、断点续传、Wi-Fi 修改、重启、备份恢复。
 
 启停与配置切换由 rpcd 特权助手 `/usr/libexec/rpcd/ilink-action` 执行：rpcd 以 root 运行，

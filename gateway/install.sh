@@ -4,7 +4,7 @@ set -eu
 # Run only after reviewing the DDNSTO and security notes in README.md.
 [ "$(id -u)" = 0 ] || { echo "Run as root" >&2; exit 1; }
 BASE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-for file in gateway.lua gateway.cgi module.cgi urlcode.lua openclash.lua files.lua fastnet.lua ubus-acl.json rpcd-acl.json ilink.init rpcd/ilink-action; do
+for file in gateway.lua gateway.cgi module.cgi urlcode.lua openclash.lua files.lua fastnet.lua alist.lua ubus-acl.json rpcd-acl.json ilink.init rpcd/ilink-action; do
     [ -f "$BASE/$file" ] || { echo "Missing $file" >&2; exit 1; }
 done
 for command in uhttpd lua openssl useradd groupadd chpasswd uci; do
@@ -30,17 +30,17 @@ cp /etc/uhttpd.key /etc/ilink/uhttpd.key
 chown root:ilink /etc/ilink/uhttpd.crt /etc/ilink/uhttpd.key
 chmod 0640 /etc/ilink/uhttpd.crt /etc/ilink/uhttpd.key
 cp "$BASE/gateway.lua" /usr/lib/ilink/gateway.lua
-for module in urlcode openclash files fastnet; do
+for module in urlcode openclash files fastnet alist; do
     cp "$BASE/$module.lua" "/usr/lib/ilink/$module.lua"
     chown root:ilink "/usr/lib/ilink/$module.lua"
     chmod 0750 "/usr/lib/ilink/$module.lua"
 done
-for directory in openclash files fastnet; do
+for directory in openclash files fastnet alist; do
     mkdir -p "/usr/lib/ilink/www/v1/$directory"
     chown root:ilink "/usr/lib/ilink/www/v1/$directory"
     chmod 0750 "/usr/lib/ilink/www/v1/$directory"
 done
-for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close openclash/overview openclash/configs openclash/mode openclash/service openclash/switch-config files/list files/mkdir files/rename files/remove files/download files/upload files/copy files/move files/preview fastnet/quick fastnet/nat fastnet/ipv6; do
+for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close openclash/overview openclash/configs openclash/mode openclash/service openclash/switch-config files/list files/mkdir files/rename files/remove files/download files/upload files/copy files/move files/preview fastnet/quick fastnet/nat fastnet/ipv6 alist/list alist/mkdir alist/rename alist/remove alist/upload alist/download; do
     cp "$BASE/module.cgi" "/usr/lib/ilink/www/v1/$endpoint"
     chown root:ilink "/usr/lib/ilink/www/v1/$endpoint"
     chmod 0751 "/usr/lib/ilink/www/v1/$endpoint"
@@ -86,6 +86,10 @@ RPC_PASSWORD=$(openssl rand -hex 32)
 printf '%s\n' "$RPC_PASSWORD" > /etc/ilink/rpcd_password
 printf 'ilink:%s\n' "$RPC_PASSWORD" | chpasswd
 unset RPC_PASSWORD
+# AList credentials are written once (by the operator) and kept across upgrades.
+[ -e /etc/ilink/alist_credentials ] || : > /etc/ilink/alist_credentials
+chown root:ilink /etc/ilink/alist_credentials
+chmod 0640 /etc/ilink/alist_credentials
 chown root:ilink /etc/ilink/device_token /etc/ilink/rpcd_password
 chmod 0640 /etc/ilink/device_token /etc/ilink/rpcd_password
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:file_picker/file_picker.dart';
@@ -25,6 +26,9 @@ class FilesPage extends ConsumerStatefulWidget {
 
 class _FilesPageState extends ConsumerState<FilesPage> {
   late final FileService _service;
+  late final AlistService _alist;
+  int _source = 0; // 0 = router storage, 1 = AList
+  String _alistPath = '/';
   final TextEditingController _search = TextEditingController();
   final Set<String> _history = {};
   List<FileEntry> _entries = [];
@@ -38,6 +42,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
   void initState() {
     super.initState();
     _service = widget.service ?? FileService(ref.read(iLinkProvider).client);
+    _alist = AlistService(ref.read(iLinkProvider).client);
     _refresh();
   }
 
@@ -47,10 +52,42 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     super.dispose();
   }
 
+  String get _dir => _source == 0 ? _path : _alistPath;
+
+  static String _parentOf(String path) {
+    final index = path.lastIndexOf('/');
+    return index <= 0 ? '/' : path.substring(0, index);
+  }
+
+  Future<List<FileEntry>> _list(String path) =>
+      _source == 0 ? _service.list(path) : _alist.list(path);
+
+  Future<void> _mkdirAt(String dir, String name) =>
+      _source == 0 ? _service.mkdir(dir, name) : _alist.mkdir(dir, name);
+
+  Future<void> _renameTo(String path, String name) =>
+      _source == 0 ? _service.rename(path, name) : _alist.rename(path, name);
+
+  Future<void> _deleteEntry(FileEntry entry) => _source == 0
+      ? _service.remove(entry.path)
+      : _alist.remove(_parentOf(entry.path), [entry.name]);
+
+  Future<int> _uploadFile(
+    String name,
+    String base64, {
+    bool overwrite = false,
+  }) => _source == 0
+      ? _service.upload(_dir, name, base64, overwrite: overwrite)
+      : _alist.upload(_dir, name, base64);
+
+  Future<Uint8List> _downloadBytes(FileEntry entry) => _source == 0
+      ? _service.download(entry.path)
+      : _alist.download(entry.path);
+
   Future<void> _refresh() async {
     setState(() => _loading = true);
     try {
-      final entries = await _service.list(_path);
+      final entries = await _list(_dir);
       if (!mounted) return;
       setState(() {
         _entries = entries;
@@ -132,7 +169,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     }
     setState(() => _busy = true);
     try {
-      await _service.upload(_path, file.name, base64Encode(bytes));
+      await _uploadFile(file.name, base64Encode(bytes));
       await _refresh();
     } catch (error) {
       if (!mounted) return;
@@ -160,12 +197,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
         ),
       );
       if (overwrite == true) {
-        await _service.upload(
-          _path,
-          file.name,
-          base64Encode(bytes),
-          overwrite: true,
-        );
+        await _uploadFile(file.name, base64Encode(bytes), overwrite: true);
         await _refresh();
       }
     } finally {
@@ -200,20 +232,31 @@ class _FilesPageState extends ConsumerState<FilesPage> {
   void _open(FileEntry entry) {
     if (entry.directory) {
       setState(() {
-        _history.add(_path);
-        _path = entry.path;
+        if (_source == 0) {
+          _history.add(_path);
+          _path = entry.path;
+        } else {
+          _alistPath = entry.path;
+        }
         _search.clear();
       });
       _refresh();
-    } else {
+    } else if (_source == 0) {
       _preview(entry);
+    } else {
+      _download(entry);
     }
   }
 
   Future<void> _back() async {
-    if (_history.isEmpty) return;
-    setState(() => _path = _history.last);
-    _history.remove(_history.last);
+    if (_source == 0) {
+      if (_history.isEmpty) return;
+      setState(() => _path = _history.last);
+      _history.remove(_history.last);
+    } else {
+      if (_alistPath == '/') return;
+      setState(() => _alistPath = _parentOf(_alistPath));
+    }
     await _refresh();
   }
 
@@ -224,7 +267,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     }
     setState(() => _busy = true);
     try {
-      final bytes = await _service.download(entry.path);
+      final bytes = await _downloadBytes(entry);
       final directory = await getApplicationDocumentsDirectory();
       var target = File('${directory.path}/${entry.name}');
       var suffix = 1;
@@ -278,8 +321,8 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     if (name == null || name.trim().isEmpty || !mounted) return;
     await _run(
       () => entry == null
-          ? _service.mkdir(_path, name.trim())
-          : _service.rename(entry.path, name.trim()),
+          ? _mkdirAt(_dir, name.trim())
+          : _renameTo(entry.path, name.trim()),
     );
   }
 
@@ -302,7 +345,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
         child: Text('${entry.name}\n只能删除空文件夹，此操作不可撤销。'),
       ),
     );
-    if (confirmed == true) await _run(() => _service.remove(entry.path));
+    if (confirmed == true) await _run(() => _deleteEntry(entry));
   }
 
   @override
@@ -330,13 +373,29 @@ class _FilesPageState extends ConsumerState<FilesPage> {
       refreshing: _loading,
       onRefresh: _busy ? null : _refresh,
       children: [
+        p.SegmentedControl<int>(
+          segments: const [(0, '路由器存储'), (1, 'AList')],
+          value: _source,
+          onChanged: _busy
+              ? (_) {}
+              : (value) {
+                  setState(() {
+                    _source = value;
+                    _search.clear();
+                  });
+                  _refresh();
+                },
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
-            if (_path.isNotEmpty)
+            if (_dir != '' && _dir != '/')
               p.TextButton(onPressed: _back, child: const Text('‹ 上级')),
             Expanded(
               child: Text(
-                '/mnt/data_sdb1${_path.isEmpty ? '' : '/$_path'}',
+                _source == 0
+                    ? '/mnt/data_sdb1${_path.isEmpty ? '' : '/$_path'}'
+                    : _alistPath,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: p.AppTextStyle.footnote
@@ -355,29 +414,30 @@ class _FilesPageState extends ConsumerState<FilesPage> {
           decoration: const p.InputDecoration(hintText: '搜索当前目录', filled: true),
         ),
         const SizedBox(height: 12),
-        ILinkCard(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  size == null
-                      ? '共享存储'
-                      : '可用 ${formatBytes(available)} / 共 ${formatBytes(size)}',
-                  style: p.AppTextStyle.footnote.of(context),
+        if (_source == 0)
+          ILinkCard(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    size == null
+                        ? '共享存储'
+                        : '可用 ${formatBytes(available)} / 共 ${formatBytes(size)}',
+                    style: p.AppTextStyle.footnote.of(context),
+                  ),
                 ),
-              ),
-              p.TextButton(
-                onPressed: _busy ? null : _upload,
-                child: const Text('上传'),
-              ),
-              p.TextButton(
-                onPressed: () => _nameDialog(),
-                child: const Text('新建文件夹'),
-              ),
-            ],
+                p.TextButton(
+                  onPressed: _busy ? null : _upload,
+                  child: const Text('上传'),
+                ),
+                p.TextButton(
+                  onPressed: () => _nameDialog(),
+                  child: const Text('新建文件夹'),
+                ),
+              ],
+            ),
           ),
-        ),
         if (_error != null) ILinkMessage(_error!),
         Row(
           children: [
@@ -409,15 +469,16 @@ class _FilesPageState extends ConsumerState<FilesPage> {
                   label: '重命名',
                   onPressed: () => _nameDialog(entry: entry),
                 ),
-                if (!entry.directory)
+                if (_source == 0 && !entry.directory)
                   p.PopupMenuItem(
                     label: '复制到…',
                     onPressed: () => _transfer(entry, move: false),
                   ),
-                p.PopupMenuItem(
-                  label: '移动到…',
-                  onPressed: () => _transfer(entry, move: true),
-                ),
+                if (_source == 0)
+                  p.PopupMenuItem(
+                    label: '移动到…',
+                    onPressed: () => _transfer(entry, move: true),
+                  ),
                 if (!entry.directory)
                   p.PopupMenuItem(
                     label: '下载',
@@ -491,7 +552,9 @@ class _FilesPageState extends ConsumerState<FilesPage> {
             ),
         const SizedBox(height: 8),
         Text(
-          '仅限共享目录 /mnt/data_sdb1。点击文件预览，长按可重命名、复制、移动、下载或删除。禁止系统目录、路径穿越和符号链接。',
+          _source == 0
+              ? '路由器存储：仅限 /mnt/data_sdb1，禁止系统目录、路径穿越与符号链接。长按可重命名、复制、移动、下载或删除。'
+              : 'AList：使用路由器上保存的受限账号，仅能访问该账号被授权的目录。长按可重命名、下载或删除。',
           textAlign: TextAlign.center,
           style: p.AppTextStyle.caption1
               .of(context)

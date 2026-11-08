@@ -116,6 +116,57 @@ class FastNetService {
   }
 }
 
+class AlistService {
+  AlistService(this.client) : _fake = null;
+
+  /// In-memory listing for widget tests.
+  AlistService.fake(List<FileEntry> entries) : client = null, _fake = entries;
+
+  final ILinkGatewayClient? client;
+  final List<FileEntry>? _fake;
+
+  Future<List<FileEntry>> list(String path) async {
+    final fake = _fake;
+    if (fake != null) return fake;
+    final result = await client!.json('POST', 'alist/list', {'path': path});
+    return (result['entries'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => FileEntry.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<void> mkdir(String dir, String name) async {
+    if (_fake != null) return;
+    await client!.json('POST', 'alist/mkdir', {'dir': dir, 'name': name});
+  }
+
+  Future<void> rename(String path, String name) async {
+    if (_fake != null) return;
+    await client!.json('POST', 'alist/rename', {'path': path, 'name': name});
+  }
+
+  Future<void> remove(String dir, List<String> names) async {
+    if (_fake != null) return;
+    await client!.json('POST', 'alist/remove', {'dir': dir, 'names': names});
+  }
+
+  Future<int> upload(String dir, String name, String base64) async {
+    if (_fake != null) return 0;
+    final result = await client!.json('POST', 'alist/upload', {
+      'dir': dir,
+      'name': name,
+      'base64': base64,
+    });
+    return (result['size'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<Uint8List> download(String path) async {
+    if (_fake != null) return Uint8List(0);
+    final result = await client!.json('POST', 'alist/download', {'path': path});
+    return base64Decode(result['base64'] as String);
+  }
+}
+
 class FileService {
   FileService(this.client) : _fakeEntries = null;
 

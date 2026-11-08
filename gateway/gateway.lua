@@ -192,7 +192,13 @@ local module_routes = {
     ["files/preview"] = { module = "files", action = "preview", method = "POST" },
     ["fastnet/quick"] = { module = "fastnet", action = "quick", method = "GET" },
     ["fastnet/nat"] = { module = "fastnet", action = "nat", method = "GET" },
-    ["fastnet/ipv6"] = { module = "fastnet", action = "ipv6", method = "GET" }
+    ["fastnet/ipv6"] = { module = "fastnet", action = "ipv6", method = "GET" },
+    ["alist/list"] = { module = "alist", action = "list", method = "POST" },
+    ["alist/mkdir"] = { module = "alist", action = "mkdir", method = "POST" },
+    ["alist/rename"] = { module = "alist", action = "rename", method = "POST" },
+    ["alist/remove"] = { module = "alist", action = "remove", method = "POST" },
+    ["alist/upload"] = { module = "alist", action = "upload", method = "POST" },
+    ["alist/download"] = { module = "alist", action = "download", method = "POST" }
 }
 
 function handle_request(env)

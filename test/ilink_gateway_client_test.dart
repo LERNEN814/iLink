@@ -134,6 +134,18 @@ void main() {
               },
             ],
           },
+          '/v1/alist/list' => {
+            'path': '/video',
+            'write': true,
+            'entries': [
+              {
+                'name': 'movie.mp4',
+                'path': '/video/movie.mp4',
+                'directory': false,
+                'size': 1024,
+              },
+            ],
+          },
           '/v1/fastnet/quick' => {
             'summary': {
               'pingMs': 33.9,
@@ -222,6 +234,10 @@ void main() {
     expect(proxy.configName, 'test.yaml');
     await OpenClashService(client).select('Proxy Select', 'Node 1');
     expect(await OpenClashService(client).testDelay('Node 1'), 88);
+
+    final alist = await AlistService(client).list('/video');
+    expect(alist.single.name, 'movie.mp4');
+    expect(alist.single.directory, isFalse);
 
     final fastNet = await FastNetService(client).quick();
     expect(fastNet.summary['pingMs'], 33.9);
