@@ -13,6 +13,9 @@
     "luci": {
       "methods": [ "getMountPoints" ]
     },
+    "ilink-action": {
+      "methods": [ "openclash", "switch-config" ]
+    },
     "network.interface.lan": {
       "methods": [ "status" ]
     },

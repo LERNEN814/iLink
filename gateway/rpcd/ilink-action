@@ -1,0 +1,66 @@
+#!/usr/bin/lua
+-- Privileged helper for the actions the ilink gateway cannot perform itself.
+-- rpcd runs this as root; ubusd's ACL decides which callers may invoke it, and
+-- both methods take a fixed argument set. No command text is ever executed.
+local json = require "luci.jsonc"
+local fs = require "nixio.fs"
+local sys = require "luci.sys"
+
+local CONFIG_DIR = "/etc/openclash/config"
+local SERVICE = "/etc/init.d/openclash"
+
+local function quote(value)
+    return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
+end
+
+local function valid_config(name)
+    if type(name) ~= "string" or #name > 128 then return false end
+    if not name:match("^[%w_%-%.]+%.ya?ml$") or name:find("%.%.") then
+        return false
+    end
+    local stat = fs.stat(CONFIG_DIR .. "/" .. name)
+    return stat ~= nil and stat.type == "reg"
+end
+
+local function reply(value)
+    print(json.stringify(value))
+end
+
+local function call(method)
+    local input = io.stdin and io.stdin:read("*a") or ""
+    local body = {}
+    if input and input ~= "" then body = json.parse(input) or {} end
+
+    if method == "openclash" then
+        local op = body.op
+        if op ~= "start" and op ~= "stop" and op ~= "restart" then
+            return reply({ error = "invalid operation" })
+        end
+        sys.exec(SERVICE .. " " .. op)
+        return reply({ done = op })
+    end
+
+    if method == "switch-config" then
+        if not valid_config(body.name) then
+            return reply({ error = "invalid config" })
+        end
+        local path = CONFIG_DIR .. "/" .. body.name
+        sys.exec("uci set openclash.config.config_path=" .. quote(path))
+        sys.exec("uci commit openclash")
+        sys.exec(SERVICE .. " restart")
+        return reply({ config = body.name })
+    end
+
+    reply({ error = "unknown method" })
+end
+
+if arg[1] == "list" then
+    reply({
+        openclash = { op = "start|stop|restart" },
+        ["switch-config"] = { name = "" }
+    })
+elseif arg[1] == "call" then
+    call(arg[2])
+else
+    reply({ error = "usage: list|call <method>" })
+end

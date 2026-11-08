@@ -132,6 +132,22 @@ class OpenClashData {
   );
 }
 
+class FilePreview {
+  const FilePreview({required this.kind, this.content, this.base64, this.mime});
+
+  final String kind;
+  final String? content;
+  final String? base64;
+  final String? mime;
+
+  factory FilePreview.fromJson(Map<String, dynamic> json) => FilePreview(
+    kind: json['kind']?.toString() ?? 'binary',
+    content: json['content']?.toString(),
+    base64: json['base64']?.toString(),
+    mime: json['mime']?.toString(),
+  );
+}
+
 class FileEntry {
   const FileEntry({
     required this.name,
@@ -154,4 +170,23 @@ class FileEntry {
     size: (json['size'] as num?)?.toInt() ?? 0,
     modified: (json['modified'] as num?)?.toInt() ?? 0,
   );
+}
+
+/// Orders proxy groups for the tab strip: the two everyday selectors first,
+/// GLOBAL last, everything else in the gateway's order between them.
+List<ProxyGroup> orderedProxyGroups(List<ProxyGroup> groups) {
+  int rank(ProxyGroup group) {
+    final name = group.name.toUpperCase();
+    if (group.name.contains('节点选择')) return 0;
+    if (group.name.contains('自动选择')) return 1;
+    if (name.contains('GLOBAL')) return 3;
+    return 2;
+  }
+
+  final indexed = groups.indexed.toList()
+    ..sort((a, b) {
+      final byRank = rank(a.$2).compareTo(rank(b.$2));
+      return byRank != 0 ? byRank : a.$1.compareTo(b.$1);
+    });
+  return [for (final entry in indexed) entry.$2];
 }

@@ -514,7 +514,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.2.1\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.3.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

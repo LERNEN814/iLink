@@ -27,6 +27,9 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
   int _groupIndex = 0;
   final Map<String, int> _delays = {};
   final Set<String> _testing = {};
+  List<String> _configs = const [];
+  String _currentConfig = '';
+  bool _serviceBusy = false;
 
   @override
   void initState() {
@@ -40,9 +43,12 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
     setState(() => _loading = true);
     try {
       final data = await _service.load();
+      final configs = await _service.configs();
       if (!mounted) return;
       setState(() {
         _data = data;
+        _configs = configs.configs;
+        _currentConfig = configs.current;
         _error = null;
       });
     } catch (error) {
@@ -162,18 +168,19 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
 
   Widget _buildGroups(OpenClashData data) {
     if (data.groups.isEmpty) return const ILinkEmpty('暂无代理组');
-    _groupIndex = _groupIndex.clamp(0, data.groups.length - 1);
-    final group = data.groups[_groupIndex];
+    final groups = orderedProxyGroups(data.groups);
+    _groupIndex = _groupIndex.clamp(0, groups.length - 1);
+    final group = groups[_groupIndex];
     return Column(
       children: [
         SizedBox(
           height: 44,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: data.groups.length,
+            itemCount: groups.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) => p.Chip(
-              label: data.groups[index].name,
+              label: groups[index].name,
               selected: _groupIndex == index,
               onPressed: () => setState(() => _groupIndex = index),
             ),
@@ -335,27 +342,187 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
     );
   }
 
-  Widget _buildConfig(OpenClashData data) => ILinkCard(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('当前配置', style: p.AppTextStyle.headline.of(context)),
-        const SizedBox(height: 10),
-        Text(data.configName, style: p.AppTextStyle.body.of(context)),
-        const SizedBox(height: 8),
-        Text(
-          '节点切换通过 Mihomo 控制器完成，不重写订阅文件。订阅编辑与配置切换将在 v0.3 提供。',
-          style: p.AppTextStyle.footnote
-              .of(context)
-              .copyWith(
-                color: p.Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+  Future<bool> _confirm(
+    String title,
+    String detail, {
+    bool destructive = false,
+  }) async {
+    final result = await p.showFloatingDialog<bool>(
+      context: context,
+      child: p.AlertDialog(
+        title: title,
+        destructive: destructive,
+        actions: [
+          p.TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          p.TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('确认'),
+          ),
+        ],
+        child: Text(detail),
+      ),
+    );
+    return result == true;
+  }
+
+  Future<void> _switchMode(String mode) async {
+    if (_data?.mode == mode) return;
+    final ok = await _confirm(
+      '切换模式',
+      '将 OpenClash 切换为 ${_modeLabel(mode)}，现有连接会按新规则重新匹配。',
+    );
+    if (!ok) return;
+    await _run(() => _service.setMode(mode));
+  }
+
+  Future<void> _switchConfig(String name) async {
+    if (name == _currentConfig) return;
+    final ok = await _confirm(
+      '切换配置',
+      '将加载 $name 并重启 OpenClash。重启期间网络会短暂中断，外网访问也会断开数秒。',
+    );
+    if (!ok) return;
+    setState(() => _serviceBusy = true);
+    try {
+      await _service.switchConfig(name);
+      await Future<void>.delayed(const Duration(seconds: 5));
+      await _refresh();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _serviceBusy = false);
+    }
+  }
+
+  Future<void> _serviceAction(String op) async {
+    final label = switch (op) {
+      'start' => '启动',
+      'stop' => '停止',
+      _ => '重启',
+    };
+    final ok = await _confirm(
+      '$label OpenClash',
+      op == 'stop' ? '停止后所有代理与透明代理规则失效，可能需要重启才能恢复。' : '$label 期间网络会短暂中断数秒。',
+      destructive: op == 'stop',
+    );
+    if (!ok) return;
+    setState(() => _serviceBusy = true);
+    try {
+      await _service.service(op);
+      await Future<void>.delayed(const Duration(seconds: 5));
+      await _refresh();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _serviceBusy = false);
+    }
+  }
+
+  static String _modeLabel(String mode) => switch (mode) {
+    'global' => '全局',
+    'direct' => '直连',
+    _ => '规则',
+  };
+
+  Widget _buildConfig(OpenClashData data) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      ILinkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('运行模式', style: p.AppTextStyle.headline.of(context)),
+            const SizedBox(height: 12),
+            p.SegmentedControl<String>(
+              segments: const [
+                ('rule', '规则'),
+                ('global', '全局'),
+                ('direct', '直连'),
+              ],
+              value: data.mode,
+              onChanged: _busy || _serviceBusy ? (_) {} : _switchMode,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: p.OutlinedButton(
+                    onPressed: _serviceBusy
+                        ? null
+                        : () => _serviceAction(
+                            data.running ? 'restart' : 'start',
+                          ),
+                    child: Text(data.running ? '重启服务' : '启动服务'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: p.OutlinedButton(
+                    onPressed: _serviceBusy || !data.running
+                        ? null
+                        : () => _serviceAction('stop'),
+                    child: const Text('停止服务'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
-        ILinkKeyValue('累计下载', formatBytes(data.downloadTotal)),
-        ILinkKeyValue('累计上传', formatBytes(data.uploadTotal)),
-        ILinkKeyValue('混合端口', '${data.mixedPort}'),
-      ],
-    ),
+      ),
+      ILinkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('配置文件', style: p.AppTextStyle.headline.of(context)),
+            const SizedBox(height: 6),
+            Text(
+              '切换会重启 OpenClash，网络短暂中断。',
+              style: p.AppTextStyle.caption1
+                  .of(context)
+                  .copyWith(
+                    color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            if (_configs.isEmpty)
+              Text('未发现配置文件', style: p.AppTextStyle.footnote.of(context))
+            else
+              for (final name in _configs)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: p.AppTextStyle.subheadline.of(
+                            context,
+                            emphasized: name == _currentConfig,
+                          ),
+                        ),
+                      ),
+                      if (name == _currentConfig)
+                        ILinkStatusPill('使用中')
+                      else
+                        p.TextButton(
+                          onPressed: _serviceBusy
+                              ? null
+                              : () => _switchConfig(name),
+                          child: const Text('切换'),
+                        ), // ignore: sort_child_properties_last
+                    ],
+                  ),
+                ),
+            const SizedBox(height: 12),
+            ILinkKeyValue('累计下载', formatBytes(data.downloadTotal)),
+            ILinkKeyValue('累计上传', formatBytes(data.uploadTotal)),
+            ILinkKeyValue('混合端口', '${data.mixedPort}'),
+          ],
+        ),
+      ),
+    ],
   );
 }

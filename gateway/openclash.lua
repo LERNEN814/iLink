@@ -128,6 +128,54 @@ function M.groups()
     return { groups = result }
 end
 
+function M.configs()
+    local names = {}
+    for name in fs.dir("/etc/openclash/config") do
+        if name:match("%.ya?ml$") and #name <= 128 and not name:find("%.%.") then
+            local stat = fs.stat("/etc/openclash/config/" .. name)
+            if stat and stat.type == "reg" then names[#names + 1] = name end
+        end
+    end
+    table.sort(names)
+    local current = (fs.readfile("/etc/ilink/clash_config") or ""):gsub("%s+", "")
+    return { configs = names, current = fs.basename(current) }
+end
+
+function M.mode(body)
+    local mode = body.mode
+    if mode ~= "rule" and mode ~= "global" and mode ~= "direct" then
+        error("invalid mode")
+    end
+    request("PATCH", "/configs", { mode = mode })
+    return { mode = mode }
+end
+
+-- Privileged actions run through the ACL-gated rpcd helper, never as a shell.
+local function action(name, arguments)
+    local connection = require("ubus").connect()
+    if not connection then error("ubus unavailable") end
+    local result, code = connection:call("ilink-action", name, arguments or {})
+    connection:close()
+    if not result or (code and code ~= 0) then error("action failed") end
+    return result
+end
+
+function M.service(body)
+    local op = body.op
+    if op ~= "start" and op ~= "stop" and op ~= "restart" then
+        error("invalid service operation")
+    end
+    return action("openclash", { op = op })
+end
+
+function M.switch_config(body)
+    local name = body.name
+    if type(name) ~= "string" or not name:match("^[%w_%-%.]+%.ya?ml$") or name:find("%.%.") then
+        error("invalid config name")
+    end
+    return action("switch-config", { name = name })
+end
+
 function M.select(body)
     if not valid_name(body.group) or not valid_name(body.proxy) then
         error("invalid group or proxy")

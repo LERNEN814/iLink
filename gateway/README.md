@@ -12,10 +12,13 @@ OpenClash 接口（v0.2，密钥留在路由器）：
 
 - `GET /v1/openclash/status`、`GET /v1/openclash/groups`、`GET /v1/openclash/connections`
 - `POST /v1/openclash/select`、`POST /v1/openclash/test-delay`、`POST /v1/openclash/close`
+- `GET /v1/openclash/configs`
+- `POST /v1/openclash/mode`、`POST /v1/openclash/service`、`POST /v1/openclash/switch-config`
 
 文件接口（v0.2，限定 `/mnt/data_sdb1`）：
 
 - `POST /v1/files/list`、`mkdir`、`rename`、`remove`、`download`
+- `POST /v1/files/upload`、`copy`、`move`、`preview`
 
 固定规则：
 
@@ -86,7 +89,13 @@ sh test.sh
 - v0.1：系统状态、DHCP/host-hints 客户端、LAN/WAN/WAN6 接口和无线信息。
 - v0.2：上述内容，加上 OpenClash 节点切换/测速/连接断开，以及 `/mnt/data_sdb1`
   下的目录浏览、建目录、重命名、删除空目录、下载（上限 32 MB）。
-- 不在范围：文件上传与预览、配置切换、OpenClash 启停、Wi-Fi 修改、重启、备份恢复。
+- v0.3：新增文件上传/复制/移动/预览，OpenClash 模式切换、服务启停与配置切换。
+- 不在范围：目录树复制、断点续传、Wi-Fi 修改、重启、备份恢复。
+
+启停与配置切换由 rpcd 特权助手 `/usr/libexec/rpcd/ilink-action` 执行：rpcd 以 root 运行，
+ubusd ACL 仅放行 `ilink` 的 `openclash`、`switch-config` 两个方法，参数为枚举与
+`^[\w\-\.]+\.ya?ml$` 且必须真实存在的配置名，不拼接调用方命令。
 
 文件接口对每次调用做规范化路径检查，拒绝 `..`、绝对路径、反斜杠与符号链接；
-`download` 仅调用系统固定命令 `/usr/bin/base64` 且路径经过 shell 转义，不接受调用方命令。
+文件编解码只调用系统自带 `/usr/bin/openssl base64`（本机没有 `/usr/bin/base64`），
+路径经 shell 转义，不接受调用方提供的命令文本。

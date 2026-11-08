@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:prism_ui/prism_ui.dart' as p;
@@ -73,6 +75,128 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     }
   }
 
+  Future<void> _preview(FileEntry entry) async {
+    setState(() => _busy = true);
+    try {
+      final preview = await _service.preview(entry.path);
+      if (!mounted) return;
+      await p.showFloatingDialog<void>(
+        context: context,
+        child: p.AlertDialog(
+          title: entry.name,
+          actions: [
+            p.TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('关闭'),
+            ),
+          ],
+          child: switch (preview.kind) {
+            'text' => ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: SingleChildScrollView(
+                child: Text(
+                  preview.content ?? '',
+                  style: p.AppTextStyle.caption1.of(context),
+                ),
+              ),
+            ),
+            'image' when preview.base64 != null => ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: Image.memory(
+                base64Decode(preview.base64!),
+                fit: BoxFit.contain,
+              ),
+            ),
+            _ => Text(
+              '此类型暂不支持预览，请下载后查看（${formatBytes(entry.size)}）。',
+              style: p.AppTextStyle.footnote.of(context),
+            ),
+          },
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _upload() async {
+    final picked = await FilePicker.pickFiles();
+    final file = picked.isEmpty ? null : picked.first;
+    final bytes = file == null ? null : await File(file.path!).readAsBytes();
+    if (file == null || bytes == null) return;
+    if (bytes.length > 32 * 1024 * 1024) {
+      setState(() => _error = 'v0.3 上传上限为 32 MB');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await _service.upload(_path, file.name, base64Encode(bytes));
+      await _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      final exists = error.toString().contains('exists');
+      if (!exists) {
+        setState(() => _error = error.toString());
+        return;
+      }
+      final overwrite = await p.showFloatingDialog<bool>(
+        context: context,
+        child: p.AlertDialog(
+          title: '文件已存在',
+          destructive: true,
+          actions: [
+            p.TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            p.TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('覆盖'),
+            ),
+          ],
+          child: Text('${file.name} 已存在，是否覆盖？'),
+        ),
+      );
+      if (overwrite == true) {
+        await _service.upload(
+          _path,
+          file.name,
+          base64Encode(bytes),
+          overwrite: true,
+        );
+        await _refresh();
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _transfer(FileEntry entry, {required bool move}) async {
+    final controller = TextEditingController(text: _path);
+    final destination = await p.showFloatingDialog<String>(
+      context: context,
+      child: p.InputDialog(
+        title: move ? '移动到目录' : '复制到目录',
+        value: controller.text,
+        labelText: '目标目录（留空为根目录）',
+        validator: (value) {
+          final path = value?.trim() ?? '';
+          if (path.contains('..') || path.startsWith('/')) return '请输入相对路径';
+          return null;
+        },
+      ),
+    );
+    controller.dispose();
+    if (destination == null || !mounted) return;
+    await _run(
+      () => move
+          ? _service.move(entry.path, destination.trim())
+          : _service.copy(entry.path, destination.trim()),
+    );
+  }
+
   void _open(FileEntry entry) {
     if (entry.directory) {
       setState(() {
@@ -82,7 +206,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
       });
       _refresh();
     } else {
-      _download(entry);
+      _preview(entry);
     }
   }
 
@@ -244,6 +368,10 @@ class _FilesPageState extends ConsumerState<FilesPage> {
                 ),
               ),
               p.TextButton(
+                onPressed: _busy ? null : _upload,
+                child: const Text('上传'),
+              ),
+              p.TextButton(
                 onPressed: () => _nameDialog(),
                 child: const Text('新建文件夹'),
               ),
@@ -281,6 +409,20 @@ class _FilesPageState extends ConsumerState<FilesPage> {
                   label: '重命名',
                   onPressed: () => _nameDialog(entry: entry),
                 ),
+                if (!entry.directory)
+                  p.PopupMenuItem(
+                    label: '复制到…',
+                    onPressed: () => _transfer(entry, move: false),
+                  ),
+                p.PopupMenuItem(
+                  label: '移动到…',
+                  onPressed: () => _transfer(entry, move: true),
+                ),
+                if (!entry.directory)
+                  p.PopupMenuItem(
+                    label: '下载',
+                    onPressed: () => _download(entry),
+                  ),
                 p.PopupMenuItem(
                   glyph: _deleteGlyph,
                   label: '删除',
@@ -349,7 +491,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
             ),
         const SizedBox(height: 8),
         Text(
-          '仅限共享目录 /mnt/data_sdb1。长按文件可重命名或删除；禁止系统目录、路径穿越和符号链接。上传与预览将在 v0.3 提供。',
+          '仅限共享目录 /mnt/data_sdb1。点击文件预览，长按可重命名、复制、移动、下载或删除。禁止系统目录、路径穿越和符号链接。',
           textAlign: TextAlign.center,
           style: p.AppTextStyle.caption1
               .of(context)

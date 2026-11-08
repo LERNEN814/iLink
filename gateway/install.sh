@@ -4,7 +4,7 @@ set -eu
 # Run only after reviewing the DDNSTO and security notes in README.md.
 [ "$(id -u)" = 0 ] || { echo "Run as root" >&2; exit 1; }
 BASE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-for file in gateway.lua gateway.cgi module.cgi urlcode.lua openclash.lua files.lua ubus-acl.json rpcd-acl.json ilink.init; do
+for file in gateway.lua gateway.cgi module.cgi urlcode.lua openclash.lua files.lua ubus-acl.json rpcd-acl.json ilink.init rpcd/ilink-action; do
     [ -f "$BASE/$file" ] || { echo "Missing $file" >&2; exit 1; }
 done
 for command in uhttpd lua openssl useradd groupadd chpasswd uci; do
@@ -40,7 +40,7 @@ for directory in openclash files; do
     chown root:ilink "/usr/lib/ilink/www/v1/$directory"
     chmod 0750 "/usr/lib/ilink/www/v1/$directory"
 done
-for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close files/list files/mkdir files/rename files/remove files/download; do
+for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close openclash/configs openclash/mode openclash/service openclash/switch-config files/list files/mkdir files/rename files/remove files/download files/upload files/copy files/move files/preview; do
     cp "$BASE/module.cgi" "/usr/lib/ilink/www/v1/$endpoint"
     chown root:ilink "/usr/lib/ilink/www/v1/$endpoint"
     chmod 0751 "/usr/lib/ilink/www/v1/$endpoint"
@@ -64,6 +64,10 @@ for endpoint in status clients network; do
     # uhttpd explicitly requires S_IXOTH for CGI programs.
     chmod 0751 "/usr/lib/ilink/www/v1/$endpoint"
 done
+mkdir -p /usr/libexec/rpcd
+cp "$BASE/rpcd/ilink-action" /usr/libexec/rpcd/ilink-action
+chown root:root /usr/libexec/rpcd/ilink-action
+chmod 0755 /usr/libexec/rpcd/ilink-action
 cp "$BASE/rpcd-acl.json" /usr/share/rpcd/acl.d/ilink.json
 chown root:root /usr/share/rpcd/acl.d/ilink.json
 chmod 0644 /usr/share/rpcd/acl.d/ilink.json

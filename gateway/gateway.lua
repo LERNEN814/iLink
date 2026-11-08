@@ -176,11 +176,19 @@ local module_routes = {
     ["openclash/select"] = { module = "openclash", action = "select", method = "POST" },
     ["openclash/test-delay"] = { module = "openclash", action = "test_delay", method = "POST" },
     ["openclash/close"] = { module = "openclash", action = "close", method = "POST" },
+    ["openclash/configs"] = { module = "openclash", action = "configs", method = "GET" },
+    ["openclash/mode"] = { module = "openclash", action = "mode", method = "POST" },
+    ["openclash/service"] = { module = "openclash", action = "service", method = "POST" },
+    ["openclash/switch-config"] = { module = "openclash", action = "switch_config", method = "POST" },
     ["files/list"] = { module = "files", action = "list", method = "POST" },
     ["files/mkdir"] = { module = "files", action = "mkdir", method = "POST" },
     ["files/rename"] = { module = "files", action = "rename", method = "POST" },
     ["files/remove"] = { module = "files", action = "remove", method = "POST" },
-    ["files/download"] = { module = "files", action = "download", method = "POST" }
+    ["files/download"] = { module = "files", action = "download", method = "POST" },
+    ["files/upload"] = { module = "files", action = "upload", method = "POST" },
+    ["files/copy"] = { module = "files", action = "copy", method = "POST" },
+    ["files/move"] = { module = "files", action = "move", method = "POST" },
+    ["files/preview"] = { module = "files", action = "preview", method = "POST" }
 }
 
 function handle_request(env)
