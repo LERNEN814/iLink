@@ -16,10 +16,19 @@ class OpenClashService {
   Future<OpenClashData> load() async {
     final fake = _fakeData;
     if (fake != null) return fake;
-    // Two independent requests: run them together so the page waits once.
+    final gateway = client!;
+    try {
+      // v0.4 gateway: status and groups in one round trip.
+      return OpenClashData.fromJson(
+        await gateway.json('GET', 'openclash/overview'),
+      );
+    } on ILinkApiException catch (error) {
+      // Older gateway: fall back to the two-request path.
+      if (error.statusCode != 404) rethrow;
+    }
     final results = await Future.wait([
-      client!.json('GET', 'openclash/status'),
-      client!.json('GET', 'openclash/groups'),
+      gateway.json('GET', 'openclash/status'),
+      gateway.json('GET', 'openclash/groups'),
     ]);
     return OpenClashData.fromJson({...results[0], ...results[1]});
   }

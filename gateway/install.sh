@@ -40,7 +40,7 @@ for directory in openclash files; do
     chown root:ilink "/usr/lib/ilink/www/v1/$directory"
     chmod 0750 "/usr/lib/ilink/www/v1/$directory"
 done
-for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close openclash/configs openclash/mode openclash/service openclash/switch-config files/list files/mkdir files/rename files/remove files/download files/upload files/copy files/move files/preview; do
+for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close openclash/overview openclash/configs openclash/mode openclash/service openclash/switch-config files/list files/mkdir files/rename files/remove files/download files/upload files/copy files/move files/preview; do
     cp "$BASE/module.cgi" "/usr/lib/ilink/www/v1/$endpoint"
     chown root:ilink "/usr/lib/ilink/www/v1/$endpoint"
     chmod 0751 "/usr/lib/ilink/www/v1/$endpoint"

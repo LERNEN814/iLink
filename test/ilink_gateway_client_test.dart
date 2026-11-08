@@ -63,6 +63,33 @@ void main() {
             'downloadTotal': 200,
             'connections': 1,
           },
+          '/v1/openclash/overview' => {
+            'running': true,
+            'version': 'test-core',
+            'mode': 'rule',
+            'mixedPort': 7893,
+            'config': '/etc/openclash/config/test.yaml',
+            'upload': 10,
+            'download': 20,
+            'uploadTotal': 100,
+            'downloadTotal': 200,
+            'connections': 1,
+            'groups': [
+              {
+                'name': 'Proxy Select',
+                'type': 'Selector',
+                'now': 'Node 1',
+                'nodes': [
+                  {
+                    'name': 'Node 1',
+                    'type': 'Shadowsocks',
+                    'alive': true,
+                    'delay': 88,
+                  },
+                ],
+              },
+            ],
+          },
           '/v1/openclash/groups' => {
             'groups': [
               {

@@ -69,7 +69,9 @@ local function request(method, path, body)
     return json.parse(response_body) or error("invalid controller JSON")
 end
 
-local function clean_node(node)
+-- Only what the phone renders: the kernel's raw node objects carry provider
+-- metadata and history arrays that would triple the payload.
+local function clean_node(node, with_now)
     local history = node.history or {}
     local last = history[#history] or {}
     return {
@@ -77,9 +79,7 @@ local function clean_node(node)
         type = node.type,
         alive = node.alive == true,
         delay = tonumber(last.delay) or 0,
-        now = node.now,
-        all = type(node.all) == "table" and node.all or nil,
-        history = type(history) == "table" and history or nil
+        now = with_now and node.now or nil
     }
 end
 
@@ -110,14 +110,22 @@ function M.connections()
     return { connectionList = request("GET", "/connections").connections or {} }
 end
 
+function M.overview()
+    -- One round trip for the page: status plus the trimmed group tree.
+    local status = M.status()
+    status.groups = M.groups().groups
+    return status
+end
+
 function M.groups()
     local proxies = request("GET", "/proxies").proxies or {}
     local result = {}
     for _, proxy in pairs(proxies) do
         if proxy.type == "Selector" or proxy.type == "URLTest" or proxy.type == "Fallback" then
-            local group = clean_node(proxy)
+            local group = clean_node(proxy, true)
             local nodes = {}
-            for _, name in ipairs(group.all or {}) do
+            -- Iterate the raw kernel object: the trimmed copy drops `all`.
+            for _, name in ipairs(type(proxy.all) == "table" and proxy.all or {}) do
                 if proxies[name] then nodes[#nodes + 1] = clean_node(proxies[name]) end
             end
             group.nodes = nodes

@@ -12,6 +12,7 @@ OpenClash 接口（v0.2，密钥留在路由器）：
 
 - `GET /v1/openclash/status`、`GET /v1/openclash/groups`、`GET /v1/openclash/connections`
 - `POST /v1/openclash/select`、`POST /v1/openclash/test-delay`、`POST /v1/openclash/close`
+- `GET /v1/openclash/overview`（状态 + 代理组，一次往返）
 - `GET /v1/openclash/configs`
 - `POST /v1/openclash/mode`、`POST /v1/openclash/service`、`POST /v1/openclash/switch-config`
 
@@ -90,6 +91,7 @@ sh test.sh
 - v0.2：上述内容，加上 OpenClash 节点切换/测速/连接断开，以及 `/mnt/data_sdb1`
   下的目录浏览、建目录、重命名、删除空目录、下载（上限 32 MB）。
 - v0.3：新增文件上传/复制/移动/预览，OpenClash 模式切换、服务启停与配置切换。
+- v0.4：新增 `openclash/overview` 合并接口，并裁剪代理组响应字段。
 - 不在范围：目录树复制、断点续传、Wi-Fi 修改、重启、备份恢复。
 
 启停与配置切换由 rpcd 特权助手 `/usr/libexec/rpcd/ilink-action` 执行：rpcd 以 root 运行，

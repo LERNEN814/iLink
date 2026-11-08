@@ -176,6 +176,7 @@ local module_routes = {
     ["openclash/select"] = { module = "openclash", action = "select", method = "POST" },
     ["openclash/test-delay"] = { module = "openclash", action = "test_delay", method = "POST" },
     ["openclash/close"] = { module = "openclash", action = "close", method = "POST" },
+    ["openclash/overview"] = { module = "openclash", action = "overview", method = "GET" },
     ["openclash/configs"] = { module = "openclash", action = "configs", method = "GET" },
     ["openclash/mode"] = { module = "openclash", action = "mode", method = "POST" },
     ["openclash/service"] = { module = "openclash", action = "service", method = "POST" },

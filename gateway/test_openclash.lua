@@ -62,6 +62,12 @@ assert(status.config == "/etc/openclash/config/test.yaml")
 assert(not json.stringify(status):find(secret, 1, true))
 local groups = clash.groups().groups
 assert(#groups == 1 and groups[1].nodes[1].delay == 123)
+local overview = clash.overview()
+assert(overview.running and overview.version == "test-core")
+assert(#overview.groups == 1 and overview.groups[1].nodes[1].name == "Node 1")
+assert(overview.groups[1].nodes[1].history == nil, "node history must be trimmed")
+assert(overview.groups[1].all == nil, "group membership must be trimmed")
+
 assert(clash.select({ group = "Proxy Select", proxy = "Node 1" }).changed)
 assert(requests[#requests]:find("PUT /proxies/Proxy%20Select", 1, true))
 assert(clash.test_delay({ proxy = "Node 1" }).delay == 88)
