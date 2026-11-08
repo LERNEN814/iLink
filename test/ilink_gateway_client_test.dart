@@ -61,6 +61,7 @@ void main() {
             'download': 20,
             'uploadTotal': 100,
             'downloadTotal': 200,
+            'connections': 1,
           },
           '/v1/openclash/groups' => {
             'groups': [
@@ -179,7 +180,9 @@ void main() {
     final client = ILinkGatewayClient()..configure(profile());
     final proxy = await OpenClashService(client).load();
     expect(proxy.groups.single.nodes.single.delay, 88);
-    expect(proxy.connections.single.host, 'example.com:443');
+    expect(proxy.connectionTotal, 1);
+    final connections = await OpenClashService(client).connectionList();
+    expect(connections.single.host, 'example.com:443');
     expect(proxy.configName, 'test.yaml');
     await OpenClashService(client).select('Proxy Select', 'Node 1');
     expect(await OpenClashService(client).testDelay('Node 1'), 88);

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:luci_mobile/ilink/ilink_api.dart';
+import 'package:luci_mobile/ilink/ilink_feature_models.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 
 final iLinkProvider = ChangeNotifierProvider<ILinkController>(
@@ -22,6 +23,26 @@ class ILinkController extends ChangeNotifier {
 
   final ILinkGatewayClient _client;
   ILinkGatewayClient get client => _client;
+
+  // Page data outlives the page: switching tabs must not refetch everything.
+  OpenClashData? openClash;
+  DateTime? openClashAt;
+  List<ProxyConnection>? connections;
+  DateTime? connectionsAt;
+
+  bool isFresh(DateTime? at, Duration ttl) =>
+      at != null && DateTime.now().difference(at) < ttl;
+
+  void cacheOpenClash(OpenClashData value) {
+    openClash = value;
+    openClashAt = DateTime.now();
+  }
+
+  void cacheConnections(List<ProxyConnection> value) {
+    connections = value;
+    connectionsAt = DateTime.now();
+  }
+
   ILinkProfile? profile;
   ILinkData? data;
   bool initialized = false;
@@ -38,16 +59,16 @@ class ILinkController extends ChangeNotifier {
           int.tryParse(await _storage.read(key: _themeKey) ?? '0') ?? 0;
       glassEnabled = await _storage.read(key: _glassKey) != 'false';
       final raw = await _storage.read(key: _profileKey);
-      if (raw != null) {
-        profile = ILinkProfile.fromJson(jsonDecode(raw));
-        await refresh(silent: true);
-      }
+      if (raw != null) profile = ILinkProfile.fromJson(jsonDecode(raw));
     } catch (exception) {
       error = exception.toString();
     } finally {
       initialized = true;
       notifyListeners();
     }
+    // Load in the background so the shell appears immediately.
+    // Non-silent so the shell shows a spinner instead of a stale error state.
+    if (profile != null) unawaited(refresh());
   }
 
   Future<bool> save(ILinkProfile value) async {
@@ -107,6 +128,10 @@ class ILinkController extends ChangeNotifier {
     await _storage.delete(key: _profileKey);
     profile = null;
     data = null;
+    openClash = null;
+    openClashAt = null;
+    connections = null;
+    connectionsAt = null;
     error = null;
     editing = false;
     notifyListeners();

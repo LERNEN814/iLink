@@ -16,15 +16,12 @@ class OpenClashService {
   Future<OpenClashData> load() async {
     final fake = _fakeData;
     if (fake != null) return fake;
-    final gateway = client!;
-    final status = await gateway.json('GET', 'openclash/status');
-    final groups = await gateway.json('GET', 'openclash/groups');
-    final connections = await gateway.json('GET', 'openclash/connections');
-    return OpenClashData.fromJson({
-      ...status,
-      ...groups,
-      'connections': connections['connectionList'] ?? const [],
-    });
+    // Two independent requests: run them together so the page waits once.
+    final results = await Future.wait([
+      client!.json('GET', 'openclash/status'),
+      client!.json('GET', 'openclash/groups'),
+    ]);
+    return OpenClashData.fromJson({...results[0], ...results[1]});
   }
 
   Future<List<ProxyConnection>> connectionList() async {

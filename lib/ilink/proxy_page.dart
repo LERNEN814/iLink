@@ -28,22 +28,37 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
   final Map<String, int> _delays = {};
   final Set<String> _testing = {};
   List<String> _configs = const [];
+  List<ProxyConnection> _connections = const [];
+  bool _connectionsLoading = false;
   String _currentConfig = '';
   bool _serviceBusy = false;
 
   @override
   void initState() {
     super.initState();
-    _service =
-        widget.service ?? OpenClashService(ref.read(iLinkProvider).client);
+    final controller = ref.read(iLinkProvider);
+    _service = widget.service ?? OpenClashService(controller.client);
+    final cached = controller.openClash;
+    if (cached != null &&
+        controller.isFresh(
+          controller.openClashAt,
+          const Duration(seconds: 15),
+        )) {
+      _data = cached;
+      _loading = false;
+      if (_tab == 1) _loadConnectionsIfNeeded();
+      return;
+    }
     _refresh();
   }
 
   Future<void> _refresh() async {
     setState(() => _loading = true);
     try {
-      final data = await _service.load();
-      final configs = await _service.configs();
+      final results = await Future.wait([_service.load(), _service.configs()]);
+      final data = results[0] as OpenClashData;
+      final configs = results[1] as ({List<String> configs, String current});
+      ref.read(iLinkProvider).cacheOpenClash(data);
       if (!mounted) return;
       setState(() {
         _data = data;
@@ -51,10 +66,39 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
         _currentConfig = configs.current;
         _error = null;
       });
+      if (_tab == 1) await _loadConnectionsIfNeeded(force: true);
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Connections are the heaviest payload, so they load only when shown.
+  Future<void> _loadConnectionsIfNeeded({bool force = false}) async {
+    final controller = ref.read(iLinkProvider);
+    if (!force &&
+        controller.connections != null &&
+        controller.isFresh(
+          controller.connectionsAt,
+          const Duration(seconds: 10),
+        )) {
+      final cachedConnections = controller.connections;
+      if (mounted && cachedConnections != null) {
+        setState(() => _connections = cachedConnections);
+      }
+      return;
+    }
+    if (_connectionsLoading) return;
+    setState(() => _connectionsLoading = true);
+    try {
+      final value = await _service.connectionList();
+      controller.cacheConnections(value);
+      if (mounted) setState(() => _connections = value);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _connectionsLoading = false);
     }
   }
 
@@ -132,7 +176,7 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
                     Expanded(
                       child: ILinkMetric(
                         label: '活跃连接',
-                        value: '${data.connections.length}',
+                        value: '${data.connectionTotal}',
                       ),
                     ),
                     Expanded(
@@ -155,7 +199,10 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
           p.SegmentedControl<int>(
             segments: const [(0, '代理'), (1, '连接'), (2, '配置')],
             value: _tab,
-            onChanged: (value) => setState(() => _tab = value),
+            onChanged: (value) {
+              setState(() => _tab = value);
+              if (value == 1) _loadConnectionsIfNeeded();
+            },
           ),
           const SizedBox(height: 14),
           if (_tab == 0) _buildGroups(data),
@@ -294,10 +341,16 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
   }
 
   Widget _buildConnections(OpenClashData data) {
-    if (data.connections.isEmpty) return const ILinkEmpty('暂无活跃连接');
+    if (_connectionsLoading && _connections.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 60),
+        child: Center(child: p.ActivityIndicator()),
+      );
+    }
+    if (_connections.isEmpty) return const ILinkEmpty('暂无活跃连接');
     return Column(
       children: [
-        for (final connection in data.connections)
+        for (final connection in _connections)
           ILinkCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

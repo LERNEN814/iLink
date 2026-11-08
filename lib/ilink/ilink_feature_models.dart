@@ -89,6 +89,7 @@ class OpenClashData {
     required this.mixedPort,
     required this.groups,
     required this.connections,
+    this.connectionTotal = 0,
     required this.upload,
     required this.download,
     required this.uploadTotal,
@@ -102,6 +103,9 @@ class OpenClashData {
   final int mixedPort;
   final List<ProxyGroup> groups;
   final List<ProxyConnection> connections;
+
+  /// Live connections reported by the kernel; the list loads on demand.
+  final int connectionTotal;
   final int upload;
   final int download;
   final int uploadTotal;
@@ -109,27 +113,36 @@ class OpenClashData {
 
   String get configName => config.split('/').last;
 
-  factory OpenClashData.fromJson(Map<String, dynamic> json) => OpenClashData(
-    running: json['running'] == true,
-    version: json['version']?.toString() ?? '',
-    mode: json['mode']?.toString() ?? 'rule',
-    config: json['config']?.toString() ?? '',
-    mixedPort: (json['mixedPort'] as num?)?.toInt() ?? 0,
-    groups: (json['groups'] as List? ?? const [])
-        .whereType<Map>()
-        .map((item) => ProxyGroup.fromJson(Map<String, dynamic>.from(item)))
-        .toList(),
-    connections: (json['connections'] as List? ?? const [])
-        .whereType<Map>()
-        .map(
-          (item) => ProxyConnection.fromJson(Map<String, dynamic>.from(item)),
-        )
-        .toList(),
-    upload: (json['upload'] as num?)?.toInt() ?? 0,
-    download: (json['download'] as num?)?.toInt() ?? 0,
-    uploadTotal: (json['uploadTotal'] as num?)?.toInt() ?? 0,
-    downloadTotal: (json['downloadTotal'] as num?)?.toInt() ?? 0,
-  );
+  factory OpenClashData.fromJson(Map<String, dynamic> json) {
+    // The gateway reports the live count in /status and the rows only in
+    // /connections, so accept either shape here.
+    final rawConnections = json['connections'];
+    final rows = rawConnections is List ? rawConnections : const [];
+    return OpenClashData(
+      running: json['running'] == true,
+      version: json['version']?.toString() ?? '',
+      mode: json['mode']?.toString() ?? 'rule',
+      config: json['config']?.toString() ?? '',
+      mixedPort: (json['mixedPort'] as num?)?.toInt() ?? 0,
+      connectionTotal: (rawConnections is num
+          ? rawConnections.toInt()
+          : rows.length),
+      groups: (json['groups'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => ProxyGroup.fromJson(Map<String, dynamic>.from(item)))
+          .toList(),
+      connections: rows
+          .whereType<Map>()
+          .map(
+            (item) => ProxyConnection.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(),
+      upload: (json['upload'] as num?)?.toInt() ?? 0,
+      download: (json['download'] as num?)?.toInt() ?? 0,
+      uploadTotal: (json['uploadTotal'] as num?)?.toInt() ?? 0,
+      downloadTotal: (json['downloadTotal'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 class FilePreview {

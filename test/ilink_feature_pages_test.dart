@@ -54,12 +54,30 @@ const _entries = [
   ),
 ];
 
+class CountingService extends OpenClashService {
+  CountingService(super.data) : super.fake();
+
+  int loads = 0;
+  int connectionLoads = 0;
+
+  @override
+  Future<OpenClashData> load() {
+    loads++;
+    return super.load();
+  }
+
+  @override
+  Future<List<ProxyConnection>> connectionList() {
+    connectionLoads++;
+    return super.connectionList();
+  }
+}
+
 void main() {
   ILinkController controller() => ILinkController()
     ..profile = const ILinkProfile(
       remoteUrl: 'https://remote.invalid',
-      token:
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     )
     ..data = ILinkData(
       status: const {
@@ -73,6 +91,32 @@ void main() {
       transport: 'LAN',
       fetchedAt: DateTime.fromMillisecondsSinceEpoch(0),
     );
+
+  Future<void> pumpWith(
+    WidgetTester tester,
+    ILinkController controller,
+    Widget page,
+  ) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [iLinkProvider.overrideWith((ref) => controller)],
+        child: p.PrismApp(
+          theme: ILinkTheme.of(Brightness.light),
+          darkTheme: ILinkTheme.of(Brightness.dark),
+          builder: (context, child) {
+            final size = MediaQuery.sizeOf(context);
+            return p.ViewScope(size: size, isMobile: true, child: child!);
+          },
+          localizationsDelegates: const [ILinkUiLocalizations.delegate],
+          home: page,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
 
   Future<void> pump(WidgetTester tester, Widget page) async {
     tester.view.physicalSize = const Size(412, 915);
@@ -112,6 +156,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('test.yaml'), findsWidgets);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a warm cache renders the proxy page without a request', (
+    tester,
+  ) async {
+    final state = controller()..cacheOpenClash(_proxyData);
+    final service = CountingService(_proxyData);
+    await pumpWith(tester, state, ProxyPage(service: service));
+    expect(service.loads, 0, reason: 'a fresh cache must not hit the gateway');
+    expect(find.text('OpenClash'), findsOneWidget);
+  });
+
+  testWidgets('loading stores the snapshot for the next visit', (tester) async {
+    final state = controller();
+    final service = CountingService(_proxyData);
+    await pumpWith(tester, state, ProxyPage(service: service));
+    expect(service.loads, 1);
+    expect(state.openClash, isNotNull);
+    expect(service.connectionLoads, 0, reason: 'connections load lazily');
+  });
+
+  testWidgets('opening the connections tab loads them once', (tester) async {
+    final state = controller();
+    final service = CountingService(_proxyData);
+    await pumpWith(tester, state, ProxyPage(service: service));
+    await tester.tap(find.text('连接'));
+    await tester.pumpAndSettle();
+    expect(service.connectionLoads, 1);
+    expect(find.text('example.com:443'), findsOneWidget);
   });
 
   testWidgets('files page lists entries and offers long-press actions', (

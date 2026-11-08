@@ -76,7 +76,7 @@ class _ILinkHomeState extends ConsumerState<ILinkHome>
       );
     }
 
-    final pages = [
+    final pages = <Widget>[
       const _Dashboard(),
       const ProxyPage(),
       const FilesPage(),
@@ -93,17 +93,11 @@ class _ILinkHomeState extends ConsumerState<ILinkHome>
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // Every tab keeps its state: switching back must not refetch or
+          // reset scroll position.
           p.BottomInsetScope(
             inset: p.NavigationDock.insetOf(context),
-            child: p.PageTransitionSwitcher(
-              transitionBuilder: (child, animation, secondaryAnimation) =>
-                  p.FadeThroughTransition(
-                    animation: animation,
-                    secondaryAnimation: secondaryAnimation,
-                    child: child,
-                  ),
-              child: KeyedSubtree(key: ValueKey(_index), child: pages[_index]),
-            ),
+            child: IndexedStack(index: _index, children: pages),
           ),
           PositionedDirectional(
             start: 0,
@@ -514,7 +508,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.3.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.3.1\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)
