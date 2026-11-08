@@ -88,6 +88,8 @@ assert(files.remove({ path = "new" }).deleted)
 
 -- Copy and move stay inside the shared directory.
 assert(files.copy({ path = "renamed.txt", destination = "", name = "copy.txt" }).copied)
+tree[root .. "/big.bin"] = { type = "reg", size = 40 * 1024 * 1024 }
+assert(not pcall(files.copy, { path = "big.bin", destination = "" }), "oversized copy must be refused")
 assert(tree[root .. "/copy.txt"].content == "hello")
 assert(files.move({ path = "copy.txt", destination = "docs" }).moved)
 assert(tree[root .. "/docs/copy.txt"] ~= nil and tree[root .. "/copy.txt"] == nil)

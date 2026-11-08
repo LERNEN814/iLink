@@ -155,6 +155,7 @@ function M.copy(body)
         (body.name and valid_name(body.name) and body.name or fs.basename(source))
     if fs.stat(target) or fs.readlink(target) then error("already exists") end
     if stat.type == "dir" then error("directory copy is not supported") end
+    if stat.size > MAX_READ then error("file too large to copy") end
     local content = fs.readfile(source)
     if not content then error("open failed") end
     if not fs.writefile(target, content) then error("copy failed") end
