@@ -1,0 +1,17 @@
+name: path_provider_foundation
+description: Android-only build placeholder; Apple is not an iLink target.
+version: 2.6.0
+publish_to: none
+environment:
+  sdk: ^3.10.0
+  flutter: '>=3.47.0'
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: PathProviderFoundationPlugin
+      macos:
+        pluginClass: PathProviderFoundationPlugin

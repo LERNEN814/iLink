@@ -1,0 +1,19 @@
+iLink v0.1
+Copyright (C) 2026 iLink contributors
+
+iLink is a derived work of LuCI Mobile, licensed under GNU GPL version 3.
+Upstream: https://github.com/cogwheel0/luci-mobile
+Upstream commit: 81ebcfead76724cef8deb25417ea8808b57f0809
+
+The Prism UI components are by the prism_ui contributors, also GPL-3.0.
+Source: https://github.com/chen08209/prism_ui
+Pinned commit: 63450c0ac0e8e1b2c0f3ed4ad7926dc94e083185
+This is the prism_ui submodule commit used by FlClash:
+https://github.com/chen08209/FlClash
+
+Selected dashboard/tools Glyph definitions in lib/ilink/ilink_theme.dart are
+adapted from FlClash's lib/ui/icons/app_glyphs.dart (GPL-3.0).
+Prism UI's license and third-party notices are copied to licenses/.
+
+iLink is not affiliated with OpenWrt, iStoreOS, Linkease, FlClash, or the
+LuCI Mobile authors. No upstream license or copyright has been removed.

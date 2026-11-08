@@ -1,0 +1,85 @@
+#!/bin/sh
+set -eu
+
+# Run only after reviewing the DDNSTO and security notes in README.md.
+[ "$(id -u)" = 0 ] || { echo "Run as root" >&2; exit 1; }
+BASE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+for file in gateway.lua gateway.cgi ubus-acl.json rpcd-acl.json ilink.init; do
+    [ -f "$BASE/$file" ] || { echo "Missing $file" >&2; exit 1; }
+done
+for command in uhttpd lua openssl useradd groupadd chpasswd uci; do
+    command -v "$command" >/dev/null || { echo "Missing $command" >&2; exit 1; }
+done
+[ -s /etc/uhttpd.crt ] && [ -s /etc/uhttpd.key ] || {
+    echo "The existing uhttpd TLS certificate is required" >&2; exit 1;
+}
+
+if ! grep -q '^ilink:' /etc/group; then groupadd -r ilink; fi
+if ! id ilink >/dev/null 2>&1; then
+    useradd -r -g ilink -d /var/empty -M -s /bin/false ilink
+fi
+
+# Replace the v0.1 development prefix-script, if present, with fixed CGI files.
+[ ! -f /usr/lib/ilink/www/v1 ] || rm -f /usr/lib/ilink/www/v1
+mkdir -p /etc/ilink /usr/lib/ilink/www/v1
+chown root:ilink /etc/ilink /usr/lib/ilink /usr/lib/ilink/www /usr/lib/ilink/www/v1
+chmod 0750 /etc/ilink /usr/lib/ilink /usr/lib/ilink/www /usr/lib/ilink/www/v1
+# Keep LuCI's private key root-only; iLink gets its own service-readable copy.
+cp /etc/uhttpd.crt /etc/ilink/uhttpd.crt
+cp /etc/uhttpd.key /etc/ilink/uhttpd.key
+chown root:ilink /etc/ilink/uhttpd.crt /etc/ilink/uhttpd.key
+chmod 0640 /etc/ilink/uhttpd.crt /etc/ilink/uhttpd.key
+cp "$BASE/gateway.lua" /usr/lib/ilink/gateway.lua
+chown root:ilink /usr/lib/ilink/gateway.lua
+chmod 0750 /usr/lib/ilink/gateway.lua
+for endpoint in status clients network; do
+    cp "$BASE/gateway.cgi" "/usr/lib/ilink/www/v1/$endpoint"
+    chown root:ilink "/usr/lib/ilink/www/v1/$endpoint"
+    # uhttpd explicitly requires S_IXOTH for CGI programs.
+    chmod 0751 "/usr/lib/ilink/www/v1/$endpoint"
+done
+cp "$BASE/rpcd-acl.json" /usr/share/rpcd/acl.d/ilink.json
+chown root:root /usr/share/rpcd/acl.d/ilink.json
+chmod 0644 /usr/share/rpcd/acl.d/ilink.json
+cp "$BASE/ubus-acl.json" /usr/share/acl.d/ilink.json
+chown root:root /usr/share/acl.d/ilink.json
+chmod 0644 /usr/share/acl.d/ilink.json
+if pidof ubusd >/dev/null 2>&1; then kill -HUP "$(pidof ubusd)"; fi
+cp "$BASE/ilink.init" /etc/init.d/ilink
+chown root:root /etc/init.d/ilink
+chmod 0755 /etc/init.d/ilink
+
+if [ ! -s /etc/ilink/device_token ]; then
+    openssl rand -hex 32 > /etc/ilink/device_token
+fi
+RPC_PASSWORD=$(openssl rand -hex 32)
+printf '%s\n' "$RPC_PASSWORD" > /etc/ilink/rpcd_password
+printf 'ilink:%s\n' "$RPC_PASSWORD" | chpasswd
+unset RPC_PASSWORD
+chown root:ilink /etc/ilink/device_token /etc/ilink/rpcd_password
+chmod 0640 /etc/ilink/device_token /etc/ilink/rpcd_password
+
+mkdir -p /etc/ilink/backup
+cp /etc/config/rpcd "/etc/ilink/backup/rpcd.$(date +%Y%m%d%H%M%S)"
+uci -q delete rpcd.ilink || true
+uci set rpcd.ilink=login
+uci set rpcd.ilink.username=ilink
+uci set rpcd.ilink.password='$p$ilink'
+uci -q delete rpcd.ilink.read || true
+uci -q delete rpcd.ilink.write || true
+uci add_list rpcd.ilink.read=ilink-read
+uci commit rpcd
+
+/etc/init.d/rpcd restart
+/etc/init.d/ilink enable
+/etc/init.d/ilink restart
+
+LAN_IP=$(uci -q get network.lan.ipaddr)
+printf '\nGateway installed. No LuCI, SSH or generic /ubus route was created.\n'
+printf 'LAN URL: https://%s:8443\n' "$LAN_IP"
+printf 'DDNSTO target: http://127.0.0.1:8089\n'
+printf 'LAN certificate: '
+openssl x509 -in /etc/uhttpd.crt -noout -fingerprint -sha256
+printf '\nPhone token (copy to iLink; keep private):\n'
+cat /etc/ilink/device_token
+printf '\nTest locally: sh %s/test.sh\n' "$BASE"

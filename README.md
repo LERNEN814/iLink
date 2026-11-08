@@ -1,127 +1,73 @@
-# LuCI Mobile
+# iLink
 
-<div align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.cogwheel.LuCIMobile">
-    <img src="store-badges/google.webp" alt="Get LuCI Mobile on Google Play" height="56"/>
-  </a>
-  <a href="https://apps.apple.com/app/luci-mobile/id6749455847">
-    <img src="store-badges/apple.webp" alt="Download LuCI Mobile on the App Store" height="56"/>
-  </a>
-  <a href="https://apt.izzysoft.de/fdroid/index/apk/com.cogwheel.LuCIMobile">
-    <img src="store-badges/izzyondroid.webp" alt="Get LuCI Mobile on IzzyOnDroid" height="56"/>
-  </a>
-  <br><br>
+面向 iStoreOS 的 Android 管理应用。v0.1 聚焦安全的只读远程管理，采用 DDNSTO + 路由器本地受限 API 网关，不公开暴露 LuCI、SSH 或通用 `/ubus`。
 
-  <img src="https://shields.rbtlog.dev/simple/com.cogwheel.LuCIMobile" alt="Latest LuCI Mobile release"/>
-  <img src="https://img.shields.io/github/downloads/cogwheel0/luci-mobile/total?style=flat-square&amp;label=Downloads&amp;logo=github&amp;color=0A84FF" alt="Total GitHub downloads"/>
-  <br><br>
+## 下载
 
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_01.png" alt="LuCI Mobile dashboard on Android" width="320"/>
-</div>
+[下载 iLink v0.1](https://github.com/LERNEN814/iLink/releases/tag/v0.1)。提供 arm64 APK、路由器网关源码包和 SHA-256 校验文件。APK 使用测试签名，不是应用商店正式签名。
 
-LuCI Mobile is an open-source Flutter client for OpenWrt routers. It talks to LuCI RPC so you can check router health, inspect clients and interfaces, scan Wi-Fi networks, and handle common admin tasks from a phone.
+## v0.1 功能
 
-## What it does
+- 概览：型号、版本、运行时间、内存、负载、客户端与接口数量。
+- 客户端：主机名、IP、MAC、厂商和连接类型。
+- 网络：无线 SSID/信道/加密状态（不读取密钥）与 LAN/WAN/WAN6 信息。
+- 工具：连接设置、主题切换、Liquid Glass 开关、本机凭据清除。
+- DDNSTO 必选，LAN HTTPS 可选；LAN 不可用时自动切换 DDNSTO。
+- Android 安全存储保存独立 token，不保存路由器 root 密码。
+- 所有管理接口只读，不包含重启、Wi-Fi 修改或系统设置。
 
-- Saves multiple router profiles and switches between them. A profile can include a fallback address for access from another network.
-- Shows throughput, CPU load, memory use, uptime, wireless signal, and interface status on one dashboard.
-- Lists clients for every saved router or only the selected router. Search by hostname, IP address, MAC address, or vendor.
-- Shows wired and wireless interface details, traffic totals, addresses, radio state, and channel information.
-- Scans nearby Wi-Fi networks and can connect a router radio as a station.
-- Edits wireless networks and radios: SSID, security, channel, width and country code.
-- Reserves a DHCP address for a client, or blocks one with a firewall rule.
-- Wakes a sleeping device over the network.
-- Manages port forwards, traffic rules, zones and static routes.
-- Edits the hostname, timezone and description, and changes the router password.
-- Starts, stops and restarts services, and configures SQM, adblock, UPnP and DDNS.
-- Runs ping, traceroute and nslookup from the router, and reads its system and kernel logs.
-- Keeps an activity feed of what changed, and on Android can notify about it in the background.
-- Shows traffic history per client where the router records it.
-- Reboots a router after confirmation.
-- Follows the system theme or uses a selected light or dark theme.
+## 技术组成
 
-Where the router allows it, configuration changes go through its own
-apply-with-rollback protocol: if the phone cannot confirm a change in time,
-the router puts the previous configuration back by itself. Some routers do
-not grant the permission that makes this work, and there the change is
-committed immediately; the app says so while it is going in, rather than
-letting you rely on a safety net that is not there.
+- Android / Flutter 3.47+ / Dart 3.10+。
+- 基于 [LuCI Mobile](https://github.com/cogwheel0/luci-mobile) 的数据模型与业务基础。
+- 使用 [Prism UI](https://github.com/chen08209/prism_ui) 的 Liquid Glass、连续圆角、导航和转场，版本固定到 FlClash 对应提交。
+- 路由器使用已有 Lua + uhttpd，无 Python 或额外运行时。
+- GPL-3.0，上游历史和许可证保留，详见 [NOTICE](NOTICE)。
 
-Credentials and router profiles are stored through `flutter_secure_storage`. The app asks before trusting a self-signed HTTPS certificate. It does not include analytics, tracking, or advertising SDKs.
+## 项目结构
 
-## Screenshots
+```text
+lib/ilink/       iLink UI、状态管理与受限网关客户端
+lib/             LuCI Mobile 上游业务代码（保留供后续版本复用）
+gateway/         路由器 Lua 网关、ACL、安装与测试脚本
+test/            上游测试及 iLink 网络、UI 测试
+```
 
-| Dashboard | Login | Clients | Client details |
-| --- | --- | --- | --- |
-| <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_01.png" alt="Router dashboard" width="200"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_02.png" alt="Router login" width="200"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_03.png" alt="Connected clients" width="200"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_04.png" alt="Expanded client details" width="200"/> |
+## 构建
 
-| Interfaces | Interface details |
-| --- | --- |
-| <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_05.png" alt="Router interfaces" width="200"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_06.png" alt="Expanded interface details" width="200"/> |
-
-## Install
-
-Use [Google Play](https://play.google.com/store/apps/details?id=com.cogwheel.LuCIMobile), the [Apple App Store](https://apps.apple.com/app/luci-mobile/id6749455847), or [IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/com.cogwheel.LuCIMobile).
-
-To run the source, install Flutter with Dart 3.8.1 or newer, then run:
-
-```bash
-git clone https://github.com/cogwheel0/luci-mobile.git
-cd luci-mobile
+```sh
 flutter pub get
-flutter run
-```
-
-Useful checks:
-
-```bash
-flutter analyze
+dart analyze lib/main.dart lib/ilink
 flutter test
+flutter build apk --debug
 ```
 
-## Router setup
+调试 APK 位于 `build/app/outputs/flutter-apk/app-debug.apk`。发布包使用 `flutter build apk --release --split-per-abi` 构建；分发前需要配置你自己的签名。
 
-The router must run OpenWrt with LuCI enabled. LuCI Mobile also needs the LuCI RPC and wireless information modules:
+这是 Android-only 项目。`tool/android_only_plugins/path_provider_foundation` 跳过了 Apple 专用原生构建钩子（该钩子在含空格的 Windows 用户目录下会失败）；Android 仍由 `path_provider_android` 提供实现。不要将此配置用于 iOS/macOS 构建。
+
+## 部署与配置
+
+部署必须由用户明确确认。安装会创建低权限账号、修改 rpcd 并启动网关，请先阅读 [gateway/README.md](gateway/README.md)，在维护窗口内执行。脚本不会自动运行。
+
+配置概览：
+
+1. 在路由器安装受限网关，保存安装输出的手机 token 与 LAN 证书指纹。
+2. DDNSTO 域名映射到 `http://127.0.0.1:8089`，不是 LuCI 地址。
+3. App 中填写 `https://<前缀>.ddnsto.com` 和 token。
+4. 可选填写 `https://192.168.100.1:8443` 与证书 SHA-256 指纹。
+
+## 验证
 
 ```sh
-# OpenWrt using opkg
-opkg update
-opkg install rpcd-mod-luci rpcd-mod-iwinfo
-
-# OpenWrt using apk
-apk update
-apk add rpcd-mod-luci rpcd-mod-iwinfo
-
-/etc/init.d/rpcd restart
+flutter test test/ilink_api_test.dart test/ilink_widget_test.dart
+flutter test test/ilink_gateway_client_test.dart
+sh -n gateway/install.sh gateway/test.sh gateway/ilink.init
+lua gateway/test_gateway.lua  # 在 iStoreOS 上、仓库根目录执行
 ```
 
-Check that the RPC object is available:
+网关测试使用 mock RPC，不需要安装网关。安装后使用 `gateway/test.sh` 验证真实服务和权限。
 
-```sh
-ubus list luci-rpc
-ubus call luci-rpc getNetworkDevices '{}'
-```
+## 后续版本
 
-## Troubleshooting
-
-- If the app cannot connect, open the same router address in a browser and check the scheme, port, firewall, and VPN route.
-- If login fails, verify the username, password, and administrator permissions in LuCI.
-- If the dashboard is empty, install the RPC modules above, restart `rpcd`, and run the two `ubus` checks.
-- If login or the dashboard times out even though LuCI works in a browser, the router's LuCI may stall on parallel requests ([openwrt/luci#9091](https://github.com/openwrt/luci/issues/9091)). Limit uhttpd to one request at a time:
-
-  ```sh
-  uci set uhttpd.main.max_requests=1
-  uci commit uhttpd
-  /etc/init.d/uhttpd restart
-  ```
-- Accept a self-signed certificate only after checking that its fingerprint belongs to your router.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. Bug reports and focused pull requests are welcome.
-
-## License
-
-LuCI Mobile is licensed under [GPL-3.0](LICENSE). It is an independent project and is not affiliated with OpenWrt.
-
-Thanks to the OpenWrt and Flutter communities, the project contributors and testers, and [OpenWrtManager](https://github.com/hagaygo/OpenWrtManager) for early inspiration.
+Wi-Fi 修改、重启、文件管理、软件中心和备份恢复不在 v0.1。写操作需要独立业务接口、严格参数校验和回滚机制，不能将现有只读网关改成通用 RPC 转发器。

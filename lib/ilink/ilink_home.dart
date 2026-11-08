@@ -1,0 +1,473 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as p;
+import 'package:luci_mobile/ilink/ilink_controller.dart';
+import 'package:luci_mobile/ilink/ilink_models.dart';
+import 'package:luci_mobile/ilink/ilink_theme.dart';
+import 'package:luci_mobile/ilink/ilink_widgets.dart';
+
+class ILinkHome extends ConsumerStatefulWidget {
+  const ILinkHome({super.key});
+
+  @override
+  ConsumerState<ILinkHome> createState() => _ILinkHomeState();
+}
+
+class _ILinkHomeState extends ConsumerState<ILinkHome>
+    with WidgetsBindingObserver {
+  int _index = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      ref.read(iLinkProvider).refresh(silent: true);
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startPolling();
+      ref.read(iLinkProvider).refresh(silent: true);
+    } else {
+      _timer?.cancel();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(iLinkProvider);
+    final data = state.data;
+    if (data == null) {
+      if (state.loading) return const ILinkLoading();
+      return ILinkPage(
+        title: 'iLink',
+        children: [
+          const SizedBox(height: 70),
+          ILinkMessage(state.error ?? '暂时无法获取路由器状态'),
+          p.FilledButton(
+            onPressed: state.loading ? null : () => state.refresh(),
+            child: const Text('重新连接'),
+          ),
+          p.TextButton(
+            onPressed: state.startEditing,
+            child: const Text('检查连接设置'),
+          ),
+        ],
+      );
+    }
+
+    final pages = [
+      const _Dashboard(),
+      const _Clients(),
+      const _Network(),
+      const _Tools(),
+    ];
+    final destinations = const [
+      p.NavigationDockDestination(glyph: ILinkGlyphs.dashboard, label: '概览'),
+      p.NavigationDockDestination(glyph: ILinkGlyphs.clients, label: '客户端'),
+      p.NavigationDockDestination(glyph: ILinkGlyphs.network, label: '网络'),
+      p.NavigationDockDestination(glyph: ILinkGlyphs.tools, label: '工具'),
+    ];
+    return p.Surface(
+      color: p.SurfaceLevel.page.colorOf(p.Theme.of(context).colorScheme),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          p.BottomInsetScope(
+            inset: p.NavigationDock.insetOf(context),
+            child: p.PageTransitionSwitcher(
+              transitionBuilder: (child, animation, secondaryAnimation) =>
+                  p.FadeThroughTransition(
+                    animation: animation,
+                    secondaryAnimation: secondaryAnimation,
+                    child: child,
+                  ),
+              child: KeyedSubtree(key: ValueKey(_index), child: pages[_index]),
+            ),
+          ),
+          PositionedDirectional(
+            start: 0,
+            end: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: p.NavigationDock(
+                  destinations: destinations,
+                  selectedIndex: _index,
+                  onSelected: (index) => setState(() => _index = index),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Dashboard extends ConsumerWidget {
+  const _Dashboard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(iLinkProvider);
+    final data = state.data!;
+    final memory = data.memory;
+    final used =
+        ((memory['total'] as num? ?? 0) - (memory['available'] as num? ?? 0));
+    return ILinkPage(
+      title: 'iLink',
+      refreshing: state.refreshing,
+      onRefresh: () => ref.read(iLinkProvider).refresh(),
+      children: [
+        if (state.error != null) ILinkMessage(state.error!),
+        ILinkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      data.hostname,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: p.AppTextStyle.title2.of(
+                        context,
+                        emphasized: true,
+                      ),
+                    ),
+                  ),
+                  ILinkStatusPill(data.transport),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '路由器运行正常',
+                style: p.AppTextStyle.title3.of(context, emphasized: true),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                '${data.model} · 已运行 ${formatUptime(data.uptime)}',
+                style: p.AppTextStyle.footnote
+                    .of(context)
+                    .copyWith(
+                      color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 1.32,
+          children: [
+            ILinkMetric(
+              label: '在线客户端',
+              value: '${data.clients.length}',
+              detail: '通过 DHCP / host hints 获取',
+            ),
+            ILinkMetric(
+              label: '网络接口',
+              value: '${data.onlineInterfaces}',
+              detail: '共 ${data.interfaces.length} 个接口',
+            ),
+            ILinkMetric(
+              label: '内存使用',
+              value: '${(data.memoryUsage * 100).round()}%',
+              detail: '${formatBytes(used)} 已使用',
+            ),
+            ILinkMetric(
+              label: '系统负载',
+              value: data.load.isEmpty
+                  ? '—'
+                  : data.load.first.toStringAsFixed(2),
+              detail: '1 分钟平均负载',
+            ),
+          ],
+        ),
+        const ILinkSectionTitle('系统'),
+        ILinkCard(
+          child: Column(
+            children: [
+              ILinkKeyValue('系统版本', data.release),
+              ILinkKeyValue('内核', data.kernel),
+              ILinkKeyValue('无线网络', '${data.wireless.length} 个'),
+              ILinkKeyValue(
+                '最近更新',
+                '${data.fetchedAt.hour.toString().padLeft(2, '0')}:${data.fetchedAt.minute.toString().padLeft(2, '0')}:${data.fetchedAt.second.toString().padLeft(2, '0')}',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Clients extends ConsumerWidget {
+  const _Clients();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(iLinkProvider);
+    final clients = state.data!.clients;
+    return ILinkPage(
+      title: '客户端',
+      refreshing: state.refreshing,
+      onRefresh: () => ref.read(iLinkProvider).refresh(),
+      children: [
+        ILinkSectionTitle('${clients.length} 台设备'),
+        if (clients.isEmpty)
+          const ILinkEmpty('暂未发现客户端')
+        else
+          for (final client in clients)
+            ILinkCard(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          client.hostname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: p.AppTextStyle.headline.of(context),
+                        ),
+                      ),
+                      ILinkStatusPill(client.connectionLabel),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    client.ipAddress,
+                    style: p.AppTextStyle.subheadline.of(context),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    [
+                      client.macAddress,
+                      if (client.vendor?.isNotEmpty == true) client.vendor!,
+                    ].join(' · '),
+                    style: p.AppTextStyle.caption1
+                        .of(context)
+                        .copyWith(
+                          color: p.Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+class _Network extends ConsumerWidget {
+  const _Network();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(iLinkProvider);
+    final data = state.data!;
+    return ILinkPage(
+      title: '网络',
+      refreshing: state.refreshing,
+      onRefresh: () => ref.read(iLinkProvider).refresh(),
+      children: [
+        const ILinkSectionTitle('无线网络'),
+        if (data.wireless.isEmpty)
+          const ILinkEmpty('未获取到无线网络信息')
+        else
+          for (final wifi in data.wireless)
+            ILinkCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          wifi.ssid,
+                          style: p.AppTextStyle.headline.of(context),
+                        ),
+                      ),
+                      ILinkStatusPill(wifi.up ? '已启用' : '已停用', online: wifi.up),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ILinkKeyValue('射频', wifi.radio),
+                  ILinkKeyValue('模式', wifi.mode),
+                  ILinkKeyValue(
+                    '频段 / 信道',
+                    '${wifi.band.isEmpty ? '—' : wifi.band} / ${wifi.channel == 0 ? '自动' : wifi.channel}',
+                  ),
+                  ILinkKeyValue(
+                    '加密',
+                    wifi.encryption.isEmpty ? '—' : wifi.encryption,
+                  ),
+                ],
+              ),
+            ),
+        const ILinkSectionTitle('网络接口'),
+        for (final interface in data.interfaces)
+          ILinkCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        interface.name,
+                        style: p.AppTextStyle.headline.of(context),
+                      ),
+                    ),
+                    ILinkStatusPill(
+                      interface.isUp ? '已连接' : '未连接',
+                      online: interface.isUp,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ILinkKeyValue('IPv4', interface.ipAddress ?? '—'),
+                ILinkKeyValue('协议', interface.protocol),
+                ILinkKeyValue('设备', interface.device),
+                ILinkKeyValue('网关', interface.gateway ?? '—'),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _Tools extends ConsumerStatefulWidget {
+  const _Tools();
+
+  @override
+  ConsumerState<_Tools> createState() => _ToolsState();
+}
+
+class _ToolsState extends ConsumerState<_Tools> {
+  bool _confirmClear = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(iLinkProvider);
+    final data = state.data!;
+    final themeLabel = switch (state.themeIndex) {
+      1 => '浅色',
+      2 => '深色',
+      _ => '跟随系统',
+    };
+    return ILinkPage(
+      title: '工具',
+      refreshing: state.refreshing,
+      onRefresh: () => ref.read(iLinkProvider).refresh(),
+      children: [
+        const ILinkSectionTitle('连接'),
+        ILinkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ILinkKeyValue('当前通道', data.transport),
+              ILinkKeyValue('远程地址', state.profile!.remoteUrl),
+              ILinkKeyValue(
+                '局域网',
+                state.profile!.lanUrl.isEmpty ? '未配置' : state.profile!.lanUrl,
+              ),
+              ILinkKeyValue('安全', '独立设备凭据 · 只读接口'),
+              const SizedBox(height: 12),
+              p.OutlinedButton(
+                onPressed: state.startEditing,
+                child: const Text('修改连接设置'),
+              ),
+            ],
+          ),
+        ),
+        const ILinkSectionTitle('外观'),
+        ILinkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              p.OutlinedButton(
+                onPressed: state.cycleTheme,
+                child: Text('主题：$themeLabel'),
+              ),
+              const SizedBox(height: 8),
+              p.OutlinedButton(
+                onPressed: state.toggleGlass,
+                child: Text('Liquid Glass：${state.glassEnabled ? '标准' : '关闭'}'),
+              ),
+            ],
+          ),
+        ),
+        const ILinkSectionTitle('本机配置'),
+        ILinkCard(
+          child: _confirmClear
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '清除本机保存的地址与设备凭据？路由器上的凭据仍然有效，可单独撤销。',
+                      style: p.AppTextStyle.footnote.of(context),
+                    ),
+                    const SizedBox(height: 16),
+                    p.FilledButton(
+                      onPressed: state.clear,
+                      child: const Text('确认清除'),
+                    ),
+                    p.TextButton(
+                      onPressed: () => setState(() => _confirmClear = false),
+                      child: const Text('取消'),
+                    ),
+                  ],
+                )
+              : p.OutlinedButton(
+                  onPressed: () => setState(() => _confirmClear = true),
+                  child: const Text('清除本机配置'),
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Text(
+            'iLink v0.1.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n所有管理接口均为只读',
+            textAlign: TextAlign.center,
+            style: p.AppTextStyle.caption1
+                .of(context)
+                .copyWith(
+                  color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ),
+      ],
+    );
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "ilink-read": {
+    "description": "iLink v0.1 read-only status, clients and network",
+    "read": {
+      "ubus": {
+        "system": [ "board", "info" ],
+        "luci-rpc": [ "getHostHints", "getWirelessDevices" ],
+        "network.interface.lan": [ "status" ],
+        "network.interface.wan": [ "status" ],
+        "network.interface.wan6": [ "status" ]
+      }
+    }
+  }
+}

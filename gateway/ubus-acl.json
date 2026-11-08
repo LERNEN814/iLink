@@ -1,0 +1,23 @@
+{
+  "user": "ilink",
+  "access": {
+    "session": {
+      "methods": [ "login", "destroy" ]
+    },
+    "system": {
+      "methods": [ "board", "info" ]
+    },
+    "luci-rpc": {
+      "methods": [ "getHostHints", "getWirelessDevices" ]
+    },
+    "network.interface.lan": {
+      "methods": [ "status" ]
+    },
+    "network.interface.wan": {
+      "methods": [ "status" ]
+    },
+    "network.interface.wan6": {
+      "methods": [ "status" ]
+    }
+  }
+}
