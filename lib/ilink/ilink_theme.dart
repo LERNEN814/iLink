@@ -94,6 +94,14 @@ abstract final class ILinkGlyphs {
     GlyphBox(10.4, 11, 13.6, 14.4, 1, role: GlyphRole.detail),
   ]);
 
+  static const chevronDown = Glyph([
+    GlyphPolyline([
+      GlyphVertex(5.5, 9.5),
+      GlyphVertex(12, 16, 0.4),
+      GlyphVertex(18.5, 9.5),
+    ], role: GlyphRole.line),
+  ]);
+
   static const refresh = Glyph([
     GlyphArc(12, 12, 8.3, -2.5, 4.7),
     GlyphPolyline([

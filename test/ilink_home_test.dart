@@ -70,18 +70,26 @@ void main() {
     expect(find.text('路由器运行正常'), findsOneWidget);
     expect(find.text('75%'), findsOneWidget);
 
-    expect(find.text('phone'), findsOneWidget);
-    expect(find.text('192.168.100.2'), findsOneWidget);
-    expect(find.text('未获取到无线网络信息'), findsOneWidget);
-    expect(find.text('br-lan'), findsOneWidget);
     expect(find.text('代理'), findsOneWidget);
     expect(find.text('文件'), findsOneWidget);
+    // Sections start collapsed and reveal their contents on demand.
+    expect(find.text('phone'), findsNothing);
+    await tester.tap(find.text('设备'));
+    await tester.pumpAndSettle();
+    expect(find.text('phone'), findsOneWidget);
+    expect(find.text('192.168.100.2'), findsOneWidget);
+    await tester.tap(find.text('网络接口'));
+    await tester.pumpAndSettle();
+    expect(find.text('br-lan'), findsOneWidget);
+    await tester.tap(find.text('无线网络'));
+    await tester.pumpAndSettle();
+    expect(find.text('未获取到无线网络信息'), findsOneWidget);
 
     await tester.tap(find.text('工具'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(
       find.text(
-        'iLink v0.2.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+        'iLink v0.2.1\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
       ),
       findsOneWidget,
     );

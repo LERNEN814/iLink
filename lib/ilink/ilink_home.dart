@@ -127,11 +127,20 @@ class _ILinkHomeState extends ConsumerState<ILinkHome>
   }
 }
 
-class _Dashboard extends ConsumerWidget {
+class _Dashboard extends ConsumerStatefulWidget {
   const _Dashboard();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Dashboard> createState() => _DashboardState();
+}
+
+class _DashboardState extends ConsumerState<_Dashboard> {
+  bool _devicesOpen = false;
+  bool _wifiOpen = false;
+  bool _interfacesOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(iLinkProvider);
     final data = state.data!;
     final memory = data.memory;
@@ -180,35 +189,52 @@ class _Dashboard extends ConsumerWidget {
             ],
           ),
         ),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.32,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ILinkMetric(
-              label: '在线客户端',
-              value: '${data.clients.length}',
-              detail: '通过 DHCP / host hints 获取',
+            Expanded(
+              child: ILinkMetric(
+                label: '内存使用',
+                value: '${(data.memoryUsage * 100).round()}%',
+                detail: '${formatBytes(used)} 已使用',
+              ),
             ),
-            ILinkMetric(
-              label: '网络接口',
-              value: '${data.onlineInterfaces}',
-              detail: '共 ${data.interfaces.length} 个接口',
-            ),
-            ILinkMetric(
-              label: '内存使用',
-              value: '${(data.memoryUsage * 100).round()}%',
-              detail: '${formatBytes(used)} 已使用',
-            ),
-            ILinkMetric(
-              label: '系统负载',
-              value: data.load.isEmpty
-                  ? '—'
-                  : data.load.first.toStringAsFixed(2),
-              detail: '1 分钟平均负载',
+            const SizedBox(width: 12),
+            Expanded(
+              child: ILinkMetric(
+                label: '系统负载',
+                value: data.load.isEmpty
+                    ? '—'
+                    : data.load.first.toStringAsFixed(2),
+                detail: '1 分钟平均负载',
+              ),
             ),
           ],
+        ),
+        ILinkExpandableCard(
+          title: '设备',
+          summary: data.clients.isEmpty
+              ? '暂无在线设备'
+              : '${data.clients.length} 台设备在线',
+          expanded: _devicesOpen,
+          onToggle: () => setState(() => _devicesOpen = !_devicesOpen),
+          child: _Clients(embedded: true),
+        ),
+        ILinkExpandableCard(
+          title: '无线网络',
+          summary: data.wireless.isEmpty
+              ? '未启用无线'
+              : data.wireless.map((w) => w.ssid).join('、'),
+          expanded: _wifiOpen,
+          onToggle: () => setState(() => _wifiOpen = !_wifiOpen),
+          child: _Wireless(embedded: true),
+        ),
+        ILinkExpandableCard(
+          title: '网络接口',
+          summary: '${data.onlineInterfaces} / ${data.interfaces.length} 个已连接',
+          expanded: _interfacesOpen,
+          onToggle: () => setState(() => _interfacesOpen = !_interfacesOpen),
+          child: _Interfaces(embedded: true),
         ),
         const ILinkSectionTitle('系统'),
         ILinkCard(
@@ -224,8 +250,6 @@ class _Dashboard extends ConsumerWidget {
             ],
           ),
         ),
-        const _Clients(embedded: true),
-        const _Network(embedded: true),
       ],
     );
   }
@@ -241,7 +265,7 @@ class _Clients extends ConsumerWidget {
     final state = ref.watch(iLinkProvider);
     final clients = state.data!.clients;
     final children = <Widget>[
-      ILinkSectionTitle('${clients.length} 台设备'),
+      if (!embedded) ILinkSectionTitle('${clients.length} 台设备'),
       if (clients.isEmpty)
         const ILinkEmpty('暂未发现客户端')
       else
@@ -295,21 +319,20 @@ class _Clients extends ConsumerWidget {
   }
 }
 
-class _Network extends ConsumerWidget {
-  const _Network({this.embedded = false});
+class _Wireless extends ConsumerWidget {
+  const _Wireless({this.embedded = false});
 
   final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(iLinkProvider);
-    final data = state.data!;
+    final wireless = state.data!.wireless;
     final children = <Widget>[
-      const ILinkSectionTitle('无线网络'),
-      if (data.wireless.isEmpty)
+      if (wireless.isEmpty)
         const ILinkEmpty('未获取到无线网络信息')
       else
-        for (final wifi in data.wireless)
+        for (final wifi in wireless)
           ILinkCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,38 +362,61 @@ class _Network extends ConsumerWidget {
               ],
             ),
           ),
-      const ILinkSectionTitle('网络接口'),
-      for (final interface in data.interfaces)
-        ILinkCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      interface.name,
-                      style: p.AppTextStyle.headline.of(context),
-                    ),
-                  ),
-                  ILinkStatusPill(
-                    interface.isUp ? '已连接' : '未连接',
-                    online: interface.isUp,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              ILinkKeyValue('IPv4', interface.ipAddress ?? '—'),
-              ILinkKeyValue('协议', interface.protocol),
-              ILinkKeyValue('设备', interface.device),
-              ILinkKeyValue('网关', interface.gateway ?? '—'),
-            ],
-          ),
-        ),
     ];
     if (embedded) return Column(children: children);
     return ILinkPage(
-      title: '网络',
+      title: '无线网络',
+      refreshing: state.refreshing,
+      onRefresh: () => ref.read(iLinkProvider).refresh(),
+      children: children,
+    );
+  }
+}
+
+class _Interfaces extends ConsumerWidget {
+  const _Interfaces({this.embedded = false});
+
+  final bool embedded;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(iLinkProvider);
+    final interfaces = state.data!.interfaces;
+    final children = <Widget>[
+      if (interfaces.isEmpty)
+        const ILinkEmpty('未获取到网络接口')
+      else
+        for (final interface in interfaces)
+          ILinkCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        interface.name,
+                        style: p.AppTextStyle.headline.of(context),
+                      ),
+                    ),
+                    ILinkStatusPill(
+                      interface.isUp ? '已连接' : '未连接',
+                      online: interface.isUp,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ILinkKeyValue('IPv4', interface.ipAddress ?? '—'),
+                ILinkKeyValue('协议', interface.protocol),
+                ILinkKeyValue('设备', interface.device),
+                ILinkKeyValue('网关', interface.gateway ?? '—'),
+              ],
+            ),
+          ),
+    ];
+    if (embedded) return Column(children: children);
+    return ILinkPage(
+      title: '网络接口',
       refreshing: state.refreshing,
       onRefresh: () => ref.read(iLinkProvider).refresh(),
       children: children,
@@ -468,7 +514,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.2.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.2.1\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

@@ -69,7 +69,7 @@ class _ILinkSetupState extends ConsumerState<ILinkSetup> {
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           20,
-          MediaQuery.paddingOf(context).top + 12,
+          MediaQuery.paddingOf(context).top + ILinkPage.barHeight + 8,
           20,
           40,
         ),

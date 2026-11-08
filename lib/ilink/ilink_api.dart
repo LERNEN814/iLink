@@ -49,10 +49,13 @@ class ILinkGatewayClient {
       value.replaceAll(RegExp(r'[^0-9A-Fa-f]'), '').toUpperCase();
 
   static String? validateConfiguration(ILinkProfile profile) {
-    final remoteError = validateBaseUrl(profile.remoteUrl, remote: true);
-    if (remoteError != null) return remoteError;
+    final hasLan = profile.lanUrl.trim().isNotEmpty;
+    final hasRemote = profile.remoteUrl.trim().isNotEmpty;
+    if (!hasLan && !hasRemote) return '请至少填写 DDNSTO 地址或局域网地址';
     final lanError = validateBaseUrl(profile.lanUrl, remote: false);
     if (lanError != null) return '局域网地址：$lanError';
+    final remoteError = validateBaseUrl(profile.remoteUrl, remote: false);
+    if (remoteError != null) return remoteError;
     if (!RegExp(r'^[0-9A-Fa-f]{64}$').hasMatch(profile.token.trim())) {
       return '设备凭据应为 64 位十六进制 token';
     }

@@ -193,10 +193,11 @@ class _FilesPageState extends ConsumerState<FilesPage> {
       final result = a.name.toLowerCase().compareTo(b.name.toLowerCase());
       return _descending ? -result : result;
     });
-    final mounts = state.data?.status['mounts'] as List? ?? const [];
+    final rawMounts = state.data?.status['mounts'];
+    final mounts = rawMounts is List ? rawMounts : const <dynamic>[];
     final storage = mounts.whereType<Map>().firstWhere(
       (item) => item['mount'] == '/mnt/data_sdb1',
-      orElse: () => const {},
+      orElse: () => const <String, dynamic>{},
     );
     final size = storage['size'] as num?;
     final available = storage['available'] as num?;
