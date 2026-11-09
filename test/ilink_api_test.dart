@@ -3,7 +3,8 @@ import 'package:luci_mobile/ilink/ilink_api.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 
 void main() {
-  const token = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const token =
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   ILinkProfile profile({String lan = '', String fingerprint = ''}) =>
       ILinkProfile(
         remoteUrl: 'https://home.ddnsto.com',
@@ -59,10 +60,7 @@ void main() {
       );
       expect(
         ILinkGatewayClient.validateConfiguration(
-          profile(
-            lan: 'https://192.168.100.1:8443',
-            fingerprint: fingerprint,
-          ),
+          profile(lan: 'https://192.168.100.1:8443', fingerprint: fingerprint),
         ),
         isNull,
       );

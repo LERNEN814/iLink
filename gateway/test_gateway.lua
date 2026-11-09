@@ -32,13 +32,24 @@ package.preload["ubus"] = function()
                     return { uptime = 42, load = { 0.1 }, memory = { total = 100, available = 50 } }
                 end
                 if object == "luci-rpc" and method == "getHostHints" then
-                    return { ["00:11:22:33:44:55"] = { ipaddrs = { "192.0.2.2" }, name = "phone" } }
+                    return {
+                        ["00:11:22:33:44:55"] = { ipaddrs = { "192.168.100.2" }, name = "phone" },
+                        -- Docker bridge and a tunnel peer must not be listed.
+                        ["02:42:AC:11:00:02"] = { ipaddrs = { "172.17.0.2" }, name = "docker" },
+                        ["AA:BB:CC:DD:EE:FF"] = { ipaddrs = { "10.137.0.9" }, name = "tunnel" }
+                    }
                 end
                 if object == "luci-rpc" and method == "getWirelessDevices" then
                     return { radio0 = { interfaces = { { config = { ssid = "test-wifi" }, iwinfo = {} } } } }
                 end
                 if object == "luci" and method == "getMountPoints" then
                     return { { mount = "/mnt/data_sdb1", available = 1000, size = 2000 } }
+                end
+                if object == "network.interface.lan" then
+                    return {
+                        interface = "lan", up = true,
+                        ["ipv4-address"] = { { address = "192.168.100.1", mask = 24 } }
+                    }
                 end
                 if object:match("^network%.interface%.") then
                     return { interface = object:gsub("network%.interface%.", ""), up = true }
@@ -102,7 +113,9 @@ assert(code == 405, "file mutations must not be accepted over GET")
 code = request("/v1/openclash/unknown", "Bearer " .. token)
 assert(code == 404, "unknown controller routes must not be proxied")
 code, body = request("/clients", "Bearer " .. token)
-assert(code == 200 and body:find("192%.0%.2%.2"))
+assert(code == 200 and body:find("192%.168%.100%.2"))
+assert(not body:find("docker"), "docker bridge must be filtered")
+assert(not body:find("tunnel"), "tunnel peers must be filtered")
 code, body = request("/network", "Bearer " .. token)
 assert(code == 200 and body:find("test%-wifi"))
 assert(not body:find(secret, 1, true), "internal password must never be returned")

@@ -75,6 +75,25 @@ class OpenClashService {
     );
   }
 
+  Future<List<ConfigEntry>> configEntries() async {
+    final fake = _fakeData;
+    if (fake != null) return const <ConfigEntry>[];
+    final result = await client!.json('GET', 'openclash/configs');
+    return (result['entries'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => ConfigEntry.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<SubscriptionUsage> subscription(String name) async {
+    if (_fakeData != null) {
+      return const SubscriptionUsage(used: 0, total: 0, expire: 0);
+    }
+    return SubscriptionUsage.fromJson(
+      await client!.json('POST', 'openclash/subscription', {'name': name}),
+    );
+  }
+
   Future<void> setMode(String mode) async {
     if (_fakeData != null) return;
     await client!.json('POST', 'openclash/mode', {'mode': mode});

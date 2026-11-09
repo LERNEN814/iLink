@@ -40,7 +40,7 @@ for directory in openclash files fastnet alist; do
     chown root:ilink "/usr/lib/ilink/www/v1/$directory"
     chmod 0750 "/usr/lib/ilink/www/v1/$directory"
 done
-for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close openclash/overview openclash/configs openclash/mode openclash/service openclash/switch-config files/list files/mkdir files/rename files/remove files/download files/upload files/copy files/move files/preview fastnet/quick fastnet/nat fastnet/ipv6 alist/list alist/mkdir alist/rename alist/remove alist/upload alist/download; do
+for endpoint in openclash/status openclash/groups openclash/connections openclash/select openclash/test-delay openclash/close openclash/overview openclash/subscription openclash/configs openclash/mode openclash/service openclash/switch-config files/list files/mkdir files/rename files/remove files/download files/upload files/copy files/move files/preview fastnet/quick fastnet/nat fastnet/ipv6 alist/list alist/mkdir alist/rename alist/remove alist/upload alist/download; do
     cp "$BASE/module.cgi" "/usr/lib/ilink/www/v1/$endpoint"
     chown root:ilink "/usr/lib/ilink/www/v1/$endpoint"
     chmod 0751 "/usr/lib/ilink/www/v1/$endpoint"

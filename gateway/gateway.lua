@@ -90,24 +90,99 @@ local function status()
     }
 end
 
+local function ip_to_int(value)
+    local a, b, c, d = tostring(value):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+    if not a then return nil end
+    return tonumber(a) * 16777216 + tonumber(b) * 65536 + tonumber(c) * 256 + tonumber(d)
+end
+
+local function in_subnet(ip, network, mask)
+    local address, base, bits = ip_to_int(ip), ip_to_int(network), ip_to_int(mask)
+    if not address or not base or not bits then return false end
+    local shift = 32
+    local size = 0
+    while size < 32 and bits % 2 == 0 do
+        bits = math.floor(bits / 2)
+        size = size + 1
+    end
+    if size == 0 then return true end
+    local divisor = 2 ^ size
+    return math.floor(address / divisor) == math.floor(base / divisor)
+end
+
+local function lease_hostnames()
+    local names = {}
+    local handle = io.open("/tmp/dhcp.leases", "r")
+    if not handle then return names end
+    for line in handle:lines() do
+        local mac, host = line:match("^%S+%s+(%S+)%s+%S+%s+(%S+)")
+        if mac then names[mac:upper()] = host ~= "*" and host or nil end
+    end
+    handle:close()
+    return names
+end
+
+local function dotted_mask(mask)
+    -- ubus reports the prefix length (24), not a dotted mask.
+    local bits
+    if type(mask) == "number" and mask <= 32 then
+        bits = mask == 0 and 0 or (4294967295 - (2 ^ (32 - mask) - 1))
+    elseif type(mask) == "string" then
+        bits = ip_to_int(mask)
+    end
+    if not bits then bits = 4294967295 - 255 end
+    return string.format("%d.%d.%d.%d",
+        math.floor(bits / 16777216) % 256,
+        math.floor(bits / 65536) % 256,
+        math.floor(bits / 256) % 256,
+        bits % 256)
+end
+
+local function lan_subnet()
+    local connection = connect()
+    local lan = connection:call("network.interface.lan", "status", {
+        ubus_rpc_session = rpc_session
+    })
+    connection:close()
+    local address = lan and lan["ipv4-address"] and lan["ipv4-address"][1]
+    if not address then return nil end
+    return {
+        address = address.address,
+        mask = dotted_mask(address.mask)
+    }
+end
+
 local function clients()
+    local subnet = lan_subnet()
+    local leases = lease_hostnames()
     local connection = connect()
     local hints = call(connection, "luci-rpc", "getHostHints")
     connection:close()
-    local result = {}
+    local result, seen = {}, {}
     for mac, hint in pairs(hints) do
-        if type(mac) == "string" and mac:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") then
+        local key = type(mac) == "string" and mac:upper() or nil
+        -- Only LAN neighbours belong in the device list: the ARP/neighbour
+        -- table also carries docker bridges, tunnel peers and stale entries.
+        if key and key:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") and
+            not key:match("^02:42:") then
             local addresses = type(hint.ipaddrs) == "table" and hint.ipaddrs or {}
-            result[#result + 1] = {
-                macaddr = mac,
-                ipaddr = addresses[1],
-                hostname = hint.name,
-                ipv6addrs = hint.ip6addrs,
-                vendor = hint.vendor
-            }
+            local ip = addresses[1]
+            local allowed = subnet and ip and in_subnet(ip, subnet.address, subnet.mask)
+            if allowed and not seen[key] and ip ~= subnet.address then
+                seen[key] = true
+                result[#result + 1] = {
+                    macaddr = key,
+                    ipaddr = ip,
+                    hostname = hint.name or leases[key],
+                    ipv6addrs = hint.ip6addrs,
+                    vendor = hint.vendor
+                }
+            end
         end
     end
-    table.sort(result, function(a, b) return (a.ipaddr or "") < (b.ipaddr or "") end)
+    table.sort(result, function(a, b)
+        return (ip_to_int(a.ipaddr) or 0) < (ip_to_int(b.ipaddr) or 0)
+    end)
     return { clients = result }
 end
 
@@ -177,6 +252,7 @@ local module_routes = {
     ["openclash/test-delay"] = { module = "openclash", action = "test_delay", method = "POST" },
     ["openclash/close"] = { module = "openclash", action = "close", method = "POST" },
     ["openclash/overview"] = { module = "openclash", action = "overview", method = "GET" },
+    ["openclash/subscription"] = { module = "openclash", action = "subscription", method = "POST" },
     ["openclash/configs"] = { module = "openclash", action = "configs", method = "GET" },
     ["openclash/mode"] = { module = "openclash", action = "mode", method = "POST" },
     ["openclash/service"] = { module = "openclash", action = "service", method = "POST" },

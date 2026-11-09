@@ -196,7 +196,6 @@ class ILinkCard extends StatelessWidget {
   }
 }
 
-
 /// A card whose body collapses behind its header row.
 class ILinkExpandableCard extends StatelessWidget {
   const ILinkExpandableCard({
@@ -248,18 +247,15 @@ class ILinkExpandableCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          title,
-                          style: p.AppTextStyle.headline.of(context),
-                        ),
+                        Text(title, style: p.AppTextStyle.headline.of(context)),
                         const SizedBox(height: 4),
                         Text(
                           summary,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: p.AppTextStyle.caption1.of(context).copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                          style: p.AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(color: scheme.onSurfaceVariant),
                         ),
                       ],
                     ),

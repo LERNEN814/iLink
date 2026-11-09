@@ -145,6 +145,51 @@ class OpenClashData {
   }
 }
 
+class ConfigEntry {
+  const ConfigEntry({
+    required this.name,
+    required this.active,
+    required this.size,
+    this.remaining,
+    this.expire,
+  });
+
+  final String name;
+  final bool active;
+  final int size;
+  final String? remaining;
+  final String? expire;
+
+  factory ConfigEntry.fromJson(Map<String, dynamic> json) => ConfigEntry(
+    name: json['name']?.toString() ?? '',
+    active: json['active'] == true,
+    size: (json['size'] as num?)?.toInt() ?? 0,
+    remaining: json['remaining']?.toString(),
+    expire: json['expire']?.toString(),
+  );
+}
+
+class SubscriptionUsage {
+  const SubscriptionUsage({
+    required this.used,
+    required this.total,
+    required this.expire,
+  });
+
+  final int used;
+  final int total;
+  final int expire;
+
+  double? get percent => total > 0 ? (used / total).clamp(0, 1) : null;
+
+  factory SubscriptionUsage.fromJson(Map<String, dynamic> json) =>
+      SubscriptionUsage(
+        used: (json['used'] as num?)?.toInt() ?? 0,
+        total: (json['total'] as num?)?.toInt() ?? 0,
+        expire: (json['expire'] as num?)?.toInt() ?? 0,
+      );
+}
+
 class FastNetResult {
   const FastNetResult({required this.summary, required this.logs});
 

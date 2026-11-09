@@ -136,26 +136,57 @@ function M.groups()
     return { groups = result }
 end
 
-function M.configs()
-    local names = {}
-    for name in fs.dir("/etc/openclash/config") do
-        if name:match("%.ya?ml$") and #name <= 128 and not name:find("%.%.") then
-            local stat = fs.stat("/etc/openclash/config/" .. name)
-            if stat and stat.type == "reg" then names[#names + 1] = name end
+-- Airports inject their quota into the profile as pseudo-nodes; read it from
+-- the file instead of parsing provider HTML.
+local function quota_of(path)
+    local handle = io.open(path, "rb")
+    if not handle then return nil, nil end
+    local remaining, expire
+    local scanned = 0
+    for line in handle:lines() do
+        scanned = scanned + 1
+        if scanned > 4000 then break end
+        if not remaining then
+            remaining = line:match("剩余流量[^%d]*([%d%.]+%s*[KMGTP]?B)")
         end
+        if not expire then
+            expire = line:match("套餐到期[:：]%s*[^%d]*([%d]+%-[%d]+%-[%d]+)")
+            if not expire and line:find("长期有效", 1, true) then
+                expire = "长期有效"
+            end
+        end
+        if remaining and expire then break end
     end
-    table.sort(names)
-    local current = (fs.readfile("/etc/ilink/clash_config") or ""):gsub("%s+", "")
-    return { configs = names, current = fs.basename(current) }
+    handle:close()
+    return remaining, expire
 end
 
-function M.mode(body)
-    local mode = body.mode
-    if mode ~= "rule" and mode ~= "global" and mode ~= "direct" then
-        error("invalid mode")
+function M.configs()
+    local entries = {}
+    local current = (fs.readfile("/etc/ilink/clash_config") or ""):gsub("%s+", "")
+    current = fs.basename(current)
+    for name in fs.dir("/etc/openclash/config") do
+        if name:match("%.ya?ml$") and #name <= 128 and not name:find("%.%.") then
+            local path = "/etc/openclash/config/" .. name
+            local stat = fs.stat(path)
+            if stat and stat.type == "reg" then
+                local remaining, expire = quota_of(path)
+                entries[#entries + 1] = {
+                    name = name,
+                    active = name == current,
+                    size = stat.size or 0,
+                    modified = stat.mtime or 0,
+                    remaining = remaining,
+                    expire = expire
+                }
+            end
+        end
     end
-    request("PATCH", "/configs", { mode = mode })
-    return { mode = mode }
+    table.sort(entries, function(a, b) return a.name < b.name end)
+    -- Keep the flat list for older clients and add the richer rows.
+    local names = {}
+    for _, item in ipairs(entries) do names[#names + 1] = item.name end
+    return { configs = names, current = current, entries = entries }
 end
 
 -- Privileged actions run through the ACL-gated rpcd helper, never as a shell.
@@ -182,6 +213,25 @@ function M.switch_config(body)
         error("invalid config name")
     end
     return action("switch-config", { name = name })
+end
+
+function M.subscription(body)
+    local name = body.name
+    if type(name) ~= "string" or not name:match("^[%w_%-]+") then
+        error("invalid subscription name")
+    end
+    local result = action("subscription-info", { name = (name:gsub("%.ya?ml$", "")) })
+    local upload = tonumber(result.upload) or 0
+    local download = tonumber(result.download) or 0
+    local total = tonumber(result.total) or 0
+    return {
+        upload = upload,
+        download = download,
+        used = upload + download,
+        total = total,
+        expire = tonumber(result.expire) or 0,
+        percent = total > 0 and math.min(1, (upload + download) / total) or nil
+    }
 end
 
 function M.select(body)

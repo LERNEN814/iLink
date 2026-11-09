@@ -26,6 +26,50 @@ local function reply(value)
     print(json.stringify(value))
 end
 
+local function subscription_url(name)
+    if type(name) ~= "string" or not name:match("^[%w_%-]+$") then return nil end
+    local raw = fs.readfile("/etc/config/openclash") or ""
+    local current, pending
+    for line in raw:gmatch("[^%c]+") do
+        if line:match("^config%s+config_subscribe") then
+            pending = { name = nil, address = nil }
+        elseif pending then
+            local value = line:match("^%s*option%s+name%s+'([^']*)'")
+            if value then pending.name = value end
+            local address = line:match("^%s*option%s+address%s+'([^']*)'")
+            if address then pending.address = address end
+            if line:match("^config%s") and not line:match("config_subscribe") then
+                if pending.name == name then return pending.address end
+                pending = nil
+            end
+            if pending and pending.name == name and pending.address then
+                return pending.address
+            end
+        end
+    end
+    if pending and pending.name == name then return pending.address end
+    return nil
+end
+
+local function subscription_info(name)
+    local url = subscription_url(name)
+    if not url or not url:match("^https?://") then
+        return reply({ error = "subscription not found" })
+    end
+    local header = "/tmp/ilink-sub-" .. tostring(os.time() % 100000) .. ".hdr"
+    sys.exec("/usr/bin/curl -sS -m 25 -A 'clash-verge/v2.4.5' -D " ..
+        quote(header) .. " -o /dev/null " .. quote(url))
+    local raw = fs.readfile(header) or ""
+    fs.unlink(header)
+    local info = raw:match("[Ss]ubscription%-[Uu]serinfo:%s*([^%c]+)")
+    if not info then return reply({ error = "no subscription info" }) end
+    local result = {}
+    for key, value in info:gmatch("(%a+)%s*=%s*([%d]+)") do
+        result[key:lower()] = tonumber(value)
+    end
+    return reply(result)
+end
+
 local function call(method)
     local input = io.stdin and io.stdin:read("*a") or ""
     local body = {}
@@ -38,6 +82,10 @@ local function call(method)
         end
         sys.exec(SERVICE .. " " .. op)
         return reply({ done = op })
+    end
+
+    if method == "subscription-info" then
+        return subscription_info(body.name)
     end
 
     if method == "switch-config" then
@@ -57,7 +105,8 @@ end
 if arg[1] == "list" then
     reply({
         openclash = { op = "start|stop|restart" },
-        ["switch-config"] = { name = "" }
+        ["switch-config"] = { name = "" },
+        ["subscription-info"] = { name = "" }
     })
 elseif arg[1] == "call" then
     call(arg[2])

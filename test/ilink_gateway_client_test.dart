@@ -134,6 +134,31 @@ void main() {
               },
             ],
           },
+          '/v1/openclash/configs' => {
+            'configs': ['a.yaml', 'b.yaml'],
+            'current': 'b.yaml',
+            'entries': [
+              {
+                'name': 'a.yaml',
+                'active': false,
+                'size': 1024,
+                'remaining': '150 GB',
+                'expire': '2027-03-02',
+              },
+              {
+                'name': 'b.yaml',
+                'active': true,
+                'size': 2048,
+                'remaining': '61.43 GB',
+                'expire': '2027-01-02',
+              },
+            ],
+          },
+          '/v1/openclash/subscription' => {
+            'used': 55530924012,
+            'total': 107374182400,
+            'expire': 1798886790,
+          },
           '/v1/alist/list' => {
             'path': '/video',
             'write': true,
@@ -234,6 +259,14 @@ void main() {
     expect(proxy.configName, 'test.yaml');
     await OpenClashService(client).select('Proxy Select', 'Node 1');
     expect(await OpenClashService(client).testDelay('Node 1'), 88);
+
+    final entries = await OpenClashService(client).configEntries();
+    expect(entries.length, 2);
+    expect(entries.last.active, isTrue);
+    expect(entries.first.remaining, '150 GB');
+    final usage = await OpenClashService(client).subscription('b.yaml');
+    expect(usage.total, 107374182400);
+    expect(usage.percent, closeTo(0.5171, 0.001));
 
     final alist = await AlistService(client).list('/video');
     expect(alist.single.name, 'movie.mp4');

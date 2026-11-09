@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prism_ui/prism_ui.dart' as p;
+import 'package:prism_ui/icons/icons.dart' as icons;
+import 'package:luci_mobile/ilink/ilink_theme.dart';
 import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_feature_api.dart';
 import 'package:luci_mobile/ilink/ilink_feature_models.dart';
@@ -27,7 +29,9 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
   int _groupIndex = 0;
   final Map<String, int> _delays = {};
   final Set<String> _testing = {};
-  List<String> _configs = const [];
+  List<ConfigEntry> _configEntries = const [];
+  final Map<String, SubscriptionUsage> _usage = {};
+  final Set<String> _usageLoading = {};
   List<ProxyConnection> _connections = const [];
   bool _connectionsLoading = false;
   String _currentConfig = '';
@@ -55,14 +59,19 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
   Future<void> _refresh() async {
     setState(() => _loading = true);
     try {
-      final results = await Future.wait([_service.load(), _service.configs()]);
+      final results = await Future.wait([
+        _service.load(),
+        _service.configs(),
+        _service.configEntries(),
+      ]);
       final data = results[0] as OpenClashData;
       final configs = results[1] as ({List<String> configs, String current});
+      final entries = results[2] as List<ConfigEntry>;
       ref.read(iLinkProvider).cacheOpenClash(data);
       if (!mounted) return;
       setState(() {
         _data = data;
-        _configs = configs.configs;
+        _configEntries = entries;
         _currentConfig = configs.current;
         _error = null;
       });
@@ -450,6 +459,92 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
     }
   }
 
+  Widget _configRow(ConfigEntry entry) {
+    final usage = _usage[entry.name];
+    final loading = _usageLoading.contains(entry.name);
+    final scheme = p.Theme.of(context).colorScheme;
+    final percent = usage?.percent;
+    final meta = <String>[
+      if (entry.remaining != null) '剩余 ${entry.remaining}',
+      if (entry.expire != null) '到期 ${entry.expire}',
+      if (usage != null && usage.total > 0)
+        '已用 ${formatBytes(usage.used)} / ${formatBytes(usage.total)}',
+      if (usage != null && usage.total == 0) '订阅未提供流量信息',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  entry.name,
+                  style: p.AppTextStyle.subheadline.of(
+                    context,
+                    emphasized: entry.active,
+                  ),
+                ),
+              ),
+              if (entry.active)
+                ILinkStatusPill('使用中')
+              else
+                p.TextButton(
+                  onPressed: _serviceBusy
+                      ? null
+                      : () => _switchConfig(entry.name),
+                  child: const Text('切换'),
+                ),
+              p.IconButton(
+                tooltip: '刷新流量',
+                onPressed: loading ? null : () => _refreshUsage(entry),
+                icon: loading
+                    ? const p.ActivityIndicator(size: 16)
+                    : icons.GlyphIcon(
+                        ILinkGlyphs.refresh,
+                        size: 18,
+                        color: scheme.onSurfaceVariant,
+                      ),
+              ),
+            ],
+          ),
+          if (percent != null) ...[
+            const SizedBox(height: 2),
+            p.LinearProgressIndicator(
+              value: percent,
+              minHeight: 6,
+              backgroundColor: scheme.surfaceContainerHighest,
+            ),
+          ],
+          if (meta.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                meta,
+                style: p.AppTextStyle.caption1
+                    .of(context)
+                    .copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _refreshUsage(ConfigEntry entry) async {
+    if (_usageLoading.contains(entry.name)) return;
+    setState(() => _usageLoading.add(entry.name));
+    try {
+      final usage = await _service.subscription(entry.name);
+      if (mounted) setState(() => _usage[entry.name] = usage);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _usageLoading.remove(entry.name));
+    }
+  }
+
   Future<void> _serviceAction(String op) async {
     final label = switch (op) {
       'start' => '启动',
@@ -532,43 +627,18 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
             Text('配置文件', style: p.AppTextStyle.headline.of(context)),
             const SizedBox(height: 6),
             Text(
-              '切换会重启 OpenClash，网络短暂中断。',
+              '切换会重启 OpenClash，网络短暂中断。点右侧刷新可读取订阅流量。',
               style: p.AppTextStyle.caption1
                   .of(context)
                   .copyWith(
                     color: p.Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
-            const SizedBox(height: 8),
-            if (_configs.isEmpty)
+            const SizedBox(height: 10),
+            if (_configEntries.isEmpty)
               Text('未发现配置文件', style: p.AppTextStyle.footnote.of(context))
             else
-              for (final name in _configs)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: p.AppTextStyle.subheadline.of(
-                            context,
-                            emphasized: name == _currentConfig,
-                          ),
-                        ),
-                      ),
-                      if (name == _currentConfig)
-                        ILinkStatusPill('使用中')
-                      else
-                        p.TextButton(
-                          onPressed: _serviceBusy
-                              ? null
-                              : () => _switchConfig(name),
-                          child: const Text('切换'),
-                        ), // ignore: sort_child_properties_last
-                    ],
-                  ),
-                ),
+              for (final entry in _configEntries) _configRow(entry),
             const SizedBox(height: 12),
             ILinkKeyValue('累计下载', formatBytes(data.downloadTotal)),
             ILinkKeyValue('累计上传', formatBytes(data.uploadTotal)),
