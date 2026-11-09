@@ -279,7 +279,9 @@ local module_routes = {
     ["downloader/jobs"] = { module = "downloader", action = "jobs", method = "GET" },
     ["downloader/remove"] = { module = "downloader", action = "remove", method = "POST" },
     ["system/services"] = { module = "systeminfo", action = "services", method = "GET" },
-    ["system/updates"] = { module = "systeminfo", action = "updates", method = "GET" }
+    ["system/updates"] = { module = "systeminfo", action = "updates", method = "GET" },
+    ["system/upgrade"] = { module = "systeminfo", action = "upgrade", method = "POST" },
+    ["system/upgrade-status"] = { module = "systeminfo", action = "upgrade_status", method = "GET" }
 }
 
 function handle_request(env)

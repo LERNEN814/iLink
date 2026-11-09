@@ -84,6 +84,44 @@ local function call(method)
         return reply({ done = op })
     end
 
+    if method == "upgrade" then
+        local running = {}
+        for _, item in ipairs({
+            { name = "openclash", process = "clash" },
+            { name = "alist", process = "alist" },
+            { name = "aria2", process = "aria2c" },
+            { name = "qbittorrent", process = "qbittorrent-nox" },
+            { name = "fastnet", process = "FastNet" },
+            { name = "ddnsto", process = "ddnsto" }
+        }) do
+            if sys.call("pidof " .. item.process .. " >/dev/null 2>&1") == 0 then
+                running[#running + 1] = item.name
+            end
+        end
+        fs.writefile("/tmp/ilink-upgrade.services", table.concat(running, " "))
+        fs.writefile("/tmp/ilink-upgrade.log", "")
+        sys.call("setsid /usr/libexec/ilink-upgrade.sh >/tmp/ilink-upgrade.log 2>&1 &")
+        return reply({ started = true, services = running })
+    end
+
+    if method == "upgrade-status" then
+        local log = fs.readfile("/tmp/ilink-upgrade.log") or ""
+        local state = "running"
+        if log:find("DONE", 1, true) then
+            state = "done"
+        elseif log:find("ERROR", 1, true) then
+            state = "error"
+        elseif log == "" then
+            state = "idle"
+        end
+        local tail = {}
+        for line in log:gmatch("[^%c]+") do
+            tail[#tail + 1] = line
+            if #tail > 8 then table.remove(tail, 1) end
+        end
+        return reply({ state = state, tail = tail })
+    end
+
     if method == "updates" then
         local names = {}
         local handle = io.popen("/bin/opkg list-upgradable 2>/dev/null")
@@ -124,7 +162,9 @@ if arg[1] == "list" then
         openclash = { op = "start|stop|restart" },
         ["switch-config"] = { name = "" },
         ["subscription-info"] = { name = "" },
-        updates = { refresh = false }
+        updates = { refresh = false },
+        upgrade = { confirm = false },
+        ["upgrade-status"] = { tail = 0 }
     })
 elseif arg[1] == "call" then
     call(arg[2])

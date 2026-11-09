@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prism_ui/prism_ui.dart' as p;
 import 'package:luci_mobile/ilink/ilink_controller.dart';
@@ -487,6 +488,9 @@ class _ToolsState extends ConsumerState<_Tools> {
   List<String> _updates = const [];
   bool _downloading = false;
   bool _checkingUpdates = false;
+  bool _upgrading = false;
+  String _upgradeState = 'idle';
+  List<String> _upgradeLog = const [];
   String? _downloadNote;
   FastNetResult? _fastNet;
   String? _fastNetLabel;
@@ -528,6 +532,78 @@ class _ToolsState extends ConsumerState<_Tools> {
     } finally {
       if (mounted) setState(() => _downloading = false);
     }
+  }
+
+  Future<void> _openLuCiFlash() async {
+    final uri = Uri.parse(
+      'http://192.168.100.1/cgi-bin/luci/admin/system/flash',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _startUpgrade() async {
+    final confirmed = await p.showFloatingDialog<bool>(
+      context: context,
+      child: p.AlertDialog(
+        title: '更新全部应用？',
+        destructive: true,
+        actions: [
+          p.TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          p.TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('开始更新'),
+          ),
+        ],
+        child: Text(
+          '将升级 ${_updates.length} 个软件包，期间网络可能短暂波动；'
+          '正在运行的服务会在完成后自动重启。固件不会被动到。',
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() {
+      _upgrading = true;
+      _upgradeState = 'running';
+      _upgradeLog = const [];
+    });
+    try {
+      await SystemInfoService(ref.read(iLinkProvider).client).startUpgrade();
+      await _pollUpgrade();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _upgrading = false;
+          _upgradeState = 'error';
+          _upgradeLog = [error.toString()];
+        });
+      }
+    }
+  }
+
+  Future<void> _pollUpgrade() async {
+    for (var attempt = 0; attempt < 120; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 5));
+      if (!mounted) return;
+      try {
+        final status = await SystemInfoService(
+          ref.read(iLinkProvider).client,
+        ).upgradeStatus();
+        if (!mounted) return;
+        setState(() {
+          _upgradeState = status.state;
+          _upgradeLog = status.tail;
+        });
+        if (status.state != 'running') break;
+      } catch (_) {
+        // The router may bounce during the upgrade; keep polling.
+      }
+    }
+    if (!mounted) return;
+    setState(() => _upgrading = false);
+    await _checkUpdates();
   }
 
   Future<void> _checkUpdates() async {
@@ -827,41 +903,120 @@ class _ToolsState extends ConsumerState<_Tools> {
           ),
         ),
         const ILinkSectionTitle('固件与应用更新'),
-        ILinkCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _updates.isEmpty ? '尚未检查' : '${_updates.length} 个可更新',
-                      style: p.AppTextStyle.footnote.of(context),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ILinkCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('固件', style: p.AppTextStyle.headline.of(context)),
+                    const SizedBox(height: 6),
+                    Text(
+                      data.release,
+                      style: p.AppTextStyle.caption1
+                          .of(context)
+                          .copyWith(
+                            color: p.Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
                     ),
-                  ),
-                  p.OutlinedButton(
-                    onPressed: _checkingUpdates ? null : _checkUpdates,
-                    child: Text(_checkingUpdates ? '检查中…' : '检查更新'),
-                  ),
-                ],
-              ),
-              if (_updates.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    _updates.take(8).join('、') +
-                        (_updates.length > 8 ? ' 等' : ''),
-                    style: p.AppTextStyle.caption1
-                        .of(context)
-                        .copyWith(
-                          color: p.Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
+                    const SizedBox(height: 12),
+                    p.OutlinedButton(
+                      onPressed: _openLuCiFlash,
+                      child: const Text('打开固件升级'),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '在系统浏览器中打开 LuCI；不由此应用下发固件指令。',
+                      style: p.AppTextStyle.caption1
+                          .of(context)
+                          .copyWith(
+                            color: p.Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ILinkCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('应用', style: p.AppTextStyle.headline.of(context)),
+                    const SizedBox(height: 6),
+                    Text(
+                      _updates.isEmpty ? '尚未检查' : '${_updates.length} 个可更新',
+                      style: p.AppTextStyle.caption1
+                          .of(context)
+                          .copyWith(
+                            color: p.Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    p.OutlinedButton(
+                      onPressed: _checkingUpdates || _upgrading
+                          ? null
+                          : _checkUpdates,
+                      child: Text(_checkingUpdates ? '检查中…' : '检查更新'),
+                    ),
+                    const SizedBox(height: 8),
+                    p.OutlinedButton(
+                      onPressed: _upgrading || _updates.isEmpty
+                          ? null
+                          : _startUpgrade,
+                      child: Text(_upgrading ? '更新中…' : '一键更新'),
+                    ),
+                    if (_upgrading || _upgradeState != 'idle')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          switch (_upgradeState) {
+                            'done' => '更新完成',
+                            'error' => '更新失败，请查看路由器日志',
+                            'running' => '正在更新，请勿断电',
+                            _ => '准备中',
+                          },
+                          style: p.AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(
+                                color: _upgradeState == 'error'
+                                    ? p.Theme.of(context).colorScheme.error
+                                    : p.Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ),
+                    if (_upgradeLog.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _upgradeLog.last,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: p.AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(
+                                color: p.Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
         const ILinkSectionTitle('本机配置'),
         ILinkCard(
@@ -892,7 +1047,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.7.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.7.1\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

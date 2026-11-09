@@ -178,6 +178,17 @@ class SystemInfoService {
         .toList();
   }
 
+  Future<void> startUpgrade() =>
+      client.json('POST', 'system/upgrade', {'confirm': true});
+
+  Future<({String state, List<String> tail})> upgradeStatus() async {
+    final result = await client.json('GET', 'system/upgrade-status');
+    return (
+      state: result['state']?.toString() ?? 'idle',
+      tail: (result['tail'] as List? ?? const []).map((e) => '$e').toList(),
+    );
+  }
+
   Future<List<String>> updates() async {
     final result = await client.json('GET', 'system/updates');
     return (result['packages'] as List? ?? const [])

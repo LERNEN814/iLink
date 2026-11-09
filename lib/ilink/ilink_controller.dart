@@ -30,6 +30,15 @@ class ILinkController extends ChangeNotifier {
   List<ProxyConnection>? connections;
   DateTime? connectionsAt;
 
+  /// Last fetched subscription usage per config, kept until refreshed again.
+  final Map<String, SubscriptionUsage> quota = {};
+  DateTime? quotaAt;
+
+  void cacheQuota(String name, SubscriptionUsage usage) {
+    quota[name] = usage;
+    quotaAt = DateTime.now();
+  }
+
   bool isFresh(DateTime? at, Duration ttl) =>
       at != null && DateTime.now().difference(at) < ttl;
 
@@ -132,6 +141,8 @@ class ILinkController extends ChangeNotifier {
     openClashAt = null;
     connections = null;
     connectionsAt = null;
+    quota.clear();
+    quotaAt = null;
     error = null;
     editing = false;
     notifyListeners();

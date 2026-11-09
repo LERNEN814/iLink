@@ -25,6 +25,23 @@ function M.services()
     return { services = result }
 end
 
+local function helper(name, arguments)
+    local connection = require("ubus").connect()
+    if not connection then error("ubus unavailable") end
+    local result, code = connection:call("ilink-action", name, arguments or {})
+    connection:close()
+    if not result or (code and code ~= 0) then error("helper rejected the request") end
+    return result
+end
+
+function M.upgrade()
+    return helper("upgrade")
+end
+
+function M.upgrade_status()
+    return helper("upgrade-status")
+end
+
 function M.updates()
     -- opkg needs root; the ACL-gated helper runs the same read-only query.
     local connection = require("ubus").connect()

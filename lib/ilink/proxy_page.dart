@@ -30,7 +30,7 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
   final Map<String, int> _delays = {};
   final Set<String> _testing = {};
   List<ConfigEntry> _configEntries = const [];
-  final Map<String, SubscriptionUsage> _usage = {};
+  Map<String, SubscriptionUsage> get _usage => ref.read(iLinkProvider).quota;
   final Set<String> _usageLoading = {};
   List<ProxyConnection> _connections = const [];
   bool _connectionsLoading = false;
@@ -537,7 +537,8 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
     setState(() => _usageLoading.add(entry.name));
     try {
       final usage = await _service.subscription(entry.name);
-      if (mounted) setState(() => _usage[entry.name] = usage);
+      ref.read(iLinkProvider).cacheQuota(entry.name, usage);
+      if (mounted) setState(() {});
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
