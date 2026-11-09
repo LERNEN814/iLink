@@ -274,7 +274,12 @@ local module_routes = {
     ["alist/rename"] = { module = "alist", action = "rename", method = "POST" },
     ["alist/remove"] = { module = "alist", action = "remove", method = "POST" },
     ["alist/upload"] = { module = "alist", action = "upload", method = "POST" },
-    ["alist/download"] = { module = "alist", action = "download", method = "POST" }
+    ["alist/download"] = { module = "alist", action = "download", method = "POST" },
+    ["downloader/submit"] = { module = "downloader", action = "submit", method = "POST" },
+    ["downloader/jobs"] = { module = "downloader", action = "jobs", method = "GET" },
+    ["downloader/remove"] = { module = "downloader", action = "remove", method = "POST" },
+    ["system/services"] = { module = "systeminfo", action = "services", method = "GET" },
+    ["system/updates"] = { module = "systeminfo", action = "updates", method = "GET" }
 }
 
 function handle_request(env)

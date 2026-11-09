@@ -1,0 +1,52 @@
+-- Service states and package updates: read-only views behind fixed names.
+local sys = require "luci.sys"
+local M = {}
+
+-- id is the init script, process is what actually shows up in the process table.
+local SERVICES = {
+    { id = "openclash", process = "clash", label = "OpenClash" },
+    { id = "alist", process = "alist", label = "AList" },
+    { id = "aria2", process = "aria2c", label = "Aria2" },
+    { id = "qbittorrent", process = "qbittorrent-nox", label = "qBittorrent" },
+    { id = "fastnet", process = "FastNet", label = "FastNet" },
+    { id = "ddnsto", process = "ddnsto", label = "DDNSTO" }
+}
+
+function M.services()
+    local result = {}
+    for _, service in ipairs(SERVICES) do
+        local code = sys.call("pidof " .. service.process .. " >/dev/null 2>&1")
+        result[#result + 1] = {
+            id = service.id,
+            label = service.label,
+            running = code == 0
+        }
+    end
+    return { services = result }
+end
+
+function M.updates()
+    -- opkg needs root; the ACL-gated helper runs the same read-only query.
+    local connection = require("ubus").connect()
+    if connection then
+        local result, code = connection:call("ilink-action", "updates", {})
+        connection:close()
+        if result and (not code or code == 0) and type(result.packages) == "table" then
+            return result
+        end
+    end
+    local handle = io.popen("/bin/opkg list-upgradable 2>/dev/null")
+    local names = {}
+    if handle then
+        for line in handle:lines() do
+            local name = line:match("^(%S+)%s")
+            if name then names[#names + 1] = name end
+            if #names > 200 then break end
+        end
+        handle:close()
+    end
+    table.sort(names)
+    return { count = #names, packages = names }
+end
+
+return M

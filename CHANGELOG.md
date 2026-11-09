@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.7.0 — 2026-11-09
+
+下载器、服务总览、更新检查与 CI 收尾。**需要更新网关**。
+
+### 下载器（工具页）
+
+- 单一输入框：粘贴视频链接、m3u8、磁力链接或 `.torrent`。
+- 自动分流：磁链/种子 → **qBittorrent**（保存到 `/mnt/data_sdb1/download`）；
+  视频链接 → **yt-dlp**（保存到 `/mnt/data_sdb1/video`）。
+- 复用你已有的 `/mnt/data_sdb1/bin/yt-dlp`，不改动 Telegram bot 及其状态。
+- 任务列表显示进度与状态，可单独移除（视频任务按 pid 结束进程）。
+
+### 服务总览（概览折叠卡片）
+
+- 显示 OpenClash / AList / Aria2 / qBittorrent / FastNet / DDNSTO 的运行状态。
+- 进程名与 init 名不同（`clash`、`aria2c`、`qbittorrent-nox`、`FastNet`），已按实际进程匹配。
+
+### 固件与应用更新（工具页）
+
+- 检查可升级包，显示数量与前 8 个名称。
+- `opkg` 需要 root，因此经 ACL 受限的 rpcd 助手以只读方式执行。
+
+### CI
+
+- `release.yml` 改为**仅手动触发**：它继承自上游、包含 iOS 构建，且需要签名密钥，
+  每次打 tag 都会失败并发送邮件。`ci.yml` 保留。
+
+### 环境调整（已执行）
+
+- qBittorrent 的 `WebUI\LocalHostAuth` 由 `true` 改为 `false`（经 uci），
+  使本机网关能免密调用其 API；备份位于 `/root/Configs/qb/qBittorrent/config/qBittorrent.conf.bak.*`。
+
+### 验证（真机）
+
+- 磁链提交 → qBittorrent 任务出现（`metaDL`），随后从列表移除。
+- m3u8 链接 → yt-dlp 开始下载到 `video/`（测试后已终止并清理）。
+- 非法 scheme（`ftp://`）被拒。
+- 服务状态 6/6 正确（DDNSTO 未运行为真实状态）。
+- 更新检查返回 80 个可升级包。
+
 ## v0.6.0 — 2026-11-09
 
 设备过滤、配置流量与 CI 修复。**需要更新网关**。

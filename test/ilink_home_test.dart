@@ -87,12 +87,9 @@ void main() {
 
     await tester.tap(find.text('工具'));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(
-      find.text(
-        'iLink v0.6.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
-      ),
-      findsOneWidget,
-    );
+    // The tools tab now opens on the downloader card.
+    expect(find.text('下载'), findsWidgets);
+    expect(find.text('发送下载'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

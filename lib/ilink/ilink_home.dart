@@ -131,6 +131,26 @@ class _Dashboard extends ConsumerStatefulWidget {
 }
 
 class _DashboardState extends ConsumerState<_Dashboard> {
+  bool _servicesOpen = false;
+  List<ServiceState> _services = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadServices());
+  }
+
+  Future<void> _loadServices() async {
+    try {
+      final services = await SystemInfoService(
+        ref.read(iLinkProvider).client,
+      ).services();
+      if (mounted) setState(() => _services = services);
+    } catch (_) {
+      // The card simply stays empty; the rest of the page is unaffected.
+    }
+  }
+
   bool _devicesOpen = false;
   bool _wifiOpen = false;
   bool _interfacesOpen = false;
@@ -206,6 +226,39 @@ class _DashboardState extends ConsumerState<_Dashboard> {
               ),
             ),
           ],
+        ),
+        ILinkExpandableCard(
+          title: '服务',
+          summary: _services.isEmpty
+              ? '正在读取服务状态'
+              : '${_services.where((s) => s.running).length}/${_services.length} 运行中',
+          expanded: _servicesOpen,
+          onToggle: () {
+            setState(() => _servicesOpen = !_servicesOpen);
+            if (!_servicesOpen) _loadServices();
+          },
+          child: Column(
+            children: [
+              for (final service in _services)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          service.label,
+                          style: p.AppTextStyle.subheadline.of(context),
+                        ),
+                      ),
+                      ILinkStatusPill(
+                        service.running ? '运行中' : '已停止',
+                        online: service.running,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
         ILinkExpandableCard(
           title: '设备',
@@ -429,9 +482,67 @@ class _Tools extends ConsumerStatefulWidget {
 
 class _ToolsState extends ConsumerState<_Tools> {
   bool _confirmClear = false;
+  final TextEditingController _link = TextEditingController();
+  List<DownloadJob> _jobs = const [];
+  List<String> _updates = const [];
+  bool _downloading = false;
+  bool _checkingUpdates = false;
+  String? _downloadNote;
   FastNetResult? _fastNet;
   String? _fastNetLabel;
   bool _fastNetBusy = false;
+
+  Future<void> _refreshJobs() async {
+    try {
+      final jobs = await DownloaderService(
+        ref.read(iLinkProvider).client,
+      ).jobs();
+      if (mounted) setState(() => _jobs = jobs);
+    } catch (error) {
+      if (mounted) setState(() => _downloadNote = error.toString());
+    }
+  }
+
+  Future<void> _submitLink() async {
+    final url = _link.text.trim();
+    if (url.isEmpty) return;
+    setState(() {
+      _downloading = true;
+      _downloadNote = null;
+    });
+    try {
+      final kind = await DownloaderService(
+        ref.read(iLinkProvider).client,
+      ).submit(url);
+      _link.clear();
+      if (mounted) {
+        setState(
+          () => _downloadNote = kind == 'torrent'
+              ? '已提交到 qBittorrent'
+              : '已开始解析并下载到 video 目录',
+        );
+      }
+      await _refreshJobs();
+    } catch (error) {
+      if (mounted) setState(() => _downloadNote = error.toString());
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _checkUpdates() async {
+    setState(() => _checkingUpdates = true);
+    try {
+      final packages = await SystemInfoService(
+        ref.read(iLinkProvider).client,
+      ).updates();
+      if (mounted) setState(() => _updates = packages);
+    } catch (error) {
+      if (mounted) setState(() => _downloadNote = error.toString());
+    } finally {
+      if (mounted) setState(() => _checkingUpdates = false);
+    }
+  }
 
   Future<void> _runFastNet(String kind) async {
     final service = FastNetService(ref.read(iLinkProvider).client);
@@ -605,6 +716,97 @@ class _ToolsState extends ConsumerState<_Tools> {
             ],
           ),
         ),
+        const ILinkSectionTitle('下载'),
+        ILinkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              p.TextFormField(
+                controller: _link,
+                decoration: const p.InputDecoration(
+                  hintText: '粘贴视频链接、m3u8、磁链或 .torrent',
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: p.FilledButton(
+                      onPressed: _downloading ? null : _submitLink,
+                      child: Text(_downloading ? '提交中…' : '发送下载'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  p.OutlinedButton(
+                    onPressed: _refreshJobs,
+                    child: const Text('刷新'),
+                  ),
+                ],
+              ),
+              if (_downloadNote != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _downloadNote!,
+                  style: p.AppTextStyle.caption1
+                      .of(context)
+                      .copyWith(
+                        color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+              for (final job in _jobs.take(8))
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              job.name.isEmpty ? job.id : job.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: p.AppTextStyle.footnote.of(context),
+                            ),
+                          ),
+                          p.TextButton(
+                            onPressed: () async {
+                              await DownloaderService(
+                                ref.read(iLinkProvider).client,
+                              ).remove(job);
+                              await _refreshJobs();
+                            },
+                            child: const Text('移除'),
+                          ),
+                        ],
+                      ),
+                      p.LinearProgressIndicator(
+                        value: job.progress.clamp(0, 1),
+                        minHeight: 4,
+                        backgroundColor: p.Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                      ),
+                      if (job.detail.isNotEmpty)
+                        Text(
+                          '${job.state} · ${job.detail}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: p.AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(
+                                color: p.Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
         const ILinkSectionTitle('网络体检'),
         _fastNetCard(),
         const ILinkSectionTitle('外观'),
@@ -621,6 +823,43 @@ class _ToolsState extends ConsumerState<_Tools> {
                 onPressed: state.toggleGlass,
                 child: Text('Liquid Glass：${state.glassEnabled ? '标准' : '关闭'}'),
               ),
+            ],
+          ),
+        ),
+        const ILinkSectionTitle('固件与应用更新'),
+        ILinkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _updates.isEmpty ? '尚未检查' : '${_updates.length} 个可更新',
+                      style: p.AppTextStyle.footnote.of(context),
+                    ),
+                  ),
+                  p.OutlinedButton(
+                    onPressed: _checkingUpdates ? null : _checkUpdates,
+                    child: Text(_checkingUpdates ? '检查中…' : '检查更新'),
+                  ),
+                ],
+              ),
+              if (_updates.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _updates.take(8).join('、') +
+                        (_updates.length > 8 ? ' 等' : ''),
+                    style: p.AppTextStyle.caption1
+                        .of(context)
+                        .copyWith(
+                          color: p.Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -653,7 +892,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.6.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.7.0\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

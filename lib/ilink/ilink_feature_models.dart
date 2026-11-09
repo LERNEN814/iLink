@@ -145,6 +145,63 @@ class OpenClashData {
   }
 }
 
+class ServiceState {
+  const ServiceState({
+    required this.id,
+    required this.label,
+    required this.running,
+  });
+
+  final String id;
+  final String label;
+  final bool running;
+
+  factory ServiceState.fromJson(Map<String, dynamic> json) => ServiceState(
+    id: json['id']?.toString() ?? '',
+    label: json['label']?.toString() ?? '',
+    running: json['running'] == true,
+  );
+}
+
+class DownloadJob {
+  const DownloadJob({
+    required this.id,
+    required this.name,
+    required this.kind,
+    required this.progress,
+    required this.state,
+    required this.detail,
+  });
+
+  final String id;
+  final String name;
+  final String kind;
+  final double progress;
+  final String state;
+  final String detail;
+
+  factory DownloadJob.fromTorrent(Map<String, dynamic> json) => DownloadJob(
+    id: json['hash']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    kind: 'torrent',
+    progress: (json['progress'] as num?)?.toDouble() ?? 0,
+    state: json['state']?.toString() ?? '',
+    detail: json['speed'] is num ? '${json['speed']} B/s' : '',
+  );
+
+  factory DownloadJob.fromVideo(Map<String, dynamic> json) {
+    final tail = (json['tail'] as List? ?? const []).join(' ');
+    return DownloadJob(
+      id: json['id']?.toString() ?? '',
+      name: json['url']?.toString() ?? '',
+      kind: 'video',
+      progress: (double.tryParse('${json['progress'] ?? ''}') ?? 0) / 100,
+      state: json['status']?.toString() ?? '',
+      detail: tail.length > 160 ? tail.substring(tail.length - 160) : tail,
+    );
+  }
+}
+
 class ConfigEntry {
   const ConfigEntry({
     required this.name,

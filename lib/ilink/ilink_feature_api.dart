@@ -135,6 +135,57 @@ class FastNetService {
   }
 }
 
+class DownloaderService {
+  DownloaderService(this.client);
+
+  final ILinkGatewayClient client;
+
+  Future<String> submit(String url) async {
+    final result = await client.json('POST', 'downloader/submit', {'url': url});
+    return result['kind']?.toString() ?? 'unknown';
+  }
+
+  Future<List<DownloadJob>> jobs() async {
+    final result = await client.json('GET', 'downloader/jobs');
+    final torrents = (result['torrents'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (item) => DownloadJob.fromTorrent(Map<String, dynamic>.from(item)),
+        );
+    final videos = (result['videos'] as List? ?? const []).whereType<Map>().map(
+      (item) => DownloadJob.fromVideo(Map<String, dynamic>.from(item)),
+    );
+    return [...torrents, ...videos];
+  }
+
+  Future<void> remove(DownloadJob job) => client.json(
+    'POST',
+    'downloader/remove',
+    {'kind': job.kind, 'id': job.id},
+  );
+}
+
+class SystemInfoService {
+  SystemInfoService(this.client);
+
+  final ILinkGatewayClient client;
+
+  Future<List<ServiceState>> services() async {
+    final result = await client.json('GET', 'system/services');
+    return (result['services'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => ServiceState.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<List<String>> updates() async {
+    final result = await client.json('GET', 'system/updates');
+    return (result['packages'] as List? ?? const [])
+        .map((item) => '$item')
+        .toList();
+  }
+}
+
 class AlistService {
   AlistService(this.client) : _fake = null;
 

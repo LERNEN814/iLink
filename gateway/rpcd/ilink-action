@@ -84,6 +84,23 @@ local function call(method)
         return reply({ done = op })
     end
 
+    if method == "updates" then
+        local names = {}
+        local handle = io.popen("/bin/opkg list-upgradable 2>/dev/null")
+        if handle then
+            for line in handle:lines() do
+                local name = line:match("^(%S+)%s+%-")
+                if name and name:match("^[%w%.%+%-_]+$") and name ~= "Multiple" then
+                    names[#names + 1] = name
+                end
+                if #names > 200 then break end
+            end
+            handle:close()
+        end
+        table.sort(names)
+        return reply({ count = #names, packages = names })
+    end
+
     if method == "subscription-info" then
         return subscription_info(body.name)
     end
@@ -106,7 +123,8 @@ if arg[1] == "list" then
     reply({
         openclash = { op = "start|stop|restart" },
         ["switch-config"] = { name = "" },
-        ["subscription-info"] = { name = "" }
+        ["subscription-info"] = { name = "" },
+        updates = { refresh = false }
     })
 elseif arg[1] == "call" then
     call(arg[2])
