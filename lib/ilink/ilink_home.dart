@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart' show MaterialPageRoute;
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,8 @@ import 'package:prism_ui/prism_ui.dart' as p;
 import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 import 'package:luci_mobile/ilink/ilink_theme.dart';
+import 'package:luci_mobile/ilink/ilink_terminal.dart';
+import 'package:luci_mobile/ilink/ilink_traffic.dart';
 import 'package:luci_mobile/ilink/ilink_feature_api.dart';
 import 'package:luci_mobile/ilink/ilink_feature_models.dart';
 import 'package:luci_mobile/ilink/ilink_widgets.dart';
@@ -23,6 +26,9 @@ class ILinkHome extends ConsumerStatefulWidget {
 class _ILinkHomeState extends ConsumerState<ILinkHome>
     with WidgetsBindingObserver {
   int _index = 0;
+
+  /// -1 or 1: the direction the new tab slides in from.
+  double _slideFrom = 1;
   Timer? _timer;
 
   @override
@@ -96,11 +102,26 @@ class _ILinkHomeState extends ConsumerState<ILinkHome>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Every tab keeps its state: switching back must not refetch or
-          // reset scroll position.
+          // Tabs keep their state; the switcher only animates which one is
+          // visible, sliding in from the direction of travel like FlClash.
           p.BottomInsetScope(
             inset: p.NavigationDock.insetOf(context),
-            child: IndexedStack(index: _index, children: pages),
+            child: TweenAnimationBuilder<double>(
+              // Restarting from 0 on every switch slides the new tab in from
+              // the side of travel instead of swapping hard.
+              key: ValueKey(_index),
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              builder: (context, t, child) => Opacity(
+                opacity: t.clamp(0.0, 1.0),
+                child: Transform.translate(
+                  offset: Offset(_slideFrom * 24 * (1 - t), 0),
+                  child: child,
+                ),
+              ),
+              child: IndexedStack(index: _index, children: pages),
+            ),
           ),
           PositionedDirectional(
             start: 0,
@@ -113,7 +134,10 @@ class _ILinkHomeState extends ConsumerState<ILinkHome>
                 child: p.NavigationDock(
                   destinations: destinations,
                   selectedIndex: _index,
-                  onSelected: (index) => setState(() => _index = index),
+                  onSelected: (index) => setState(() {
+                    _slideFrom = index > _index ? 1 : -1;
+                    _index = index;
+                  }),
                 ),
               ),
             ),
@@ -153,7 +177,6 @@ class _DashboardState extends ConsumerState<_Dashboard> {
   }
 
   bool _devicesOpen = false;
-  bool _wifiOpen = false;
   bool _interfacesOpen = false;
 
   @override
@@ -228,6 +251,9 @@ class _DashboardState extends ConsumerState<_Dashboard> {
             ),
           ],
         ),
+        ILinkTrafficCard(
+          service: SystemInfoService(ref.read(iLinkProvider).client),
+        ),
         ILinkExpandableCard(
           title: '服务',
           summary: _services.isEmpty
@@ -271,15 +297,6 @@ class _DashboardState extends ConsumerState<_Dashboard> {
           child: _Clients(embedded: true),
         ),
         ILinkExpandableCard(
-          title: '无线网络',
-          summary: data.wireless.isEmpty
-              ? '未启用无线'
-              : data.wireless.map((w) => w.ssid).join('、'),
-          expanded: _wifiOpen,
-          onToggle: () => setState(() => _wifiOpen = !_wifiOpen),
-          child: _Wireless(embedded: true),
-        ),
-        ILinkExpandableCard(
           title: '网络接口',
           summary: '${data.onlineInterfaces} / ${data.interfaces.length} 个已连接',
           expanded: _interfacesOpen,
@@ -292,7 +309,6 @@ class _DashboardState extends ConsumerState<_Dashboard> {
             children: [
               ILinkKeyValue('系统版本', data.release),
               ILinkKeyValue('内核', data.kernel),
-              ILinkKeyValue('无线网络', '${data.wireless.length} 个'),
               ILinkKeyValue(
                 '最近更新',
                 '${data.fetchedAt.hour.toString().padLeft(2, '0')}:${data.fetchedAt.minute.toString().padLeft(2, '0')}:${data.fetchedAt.second.toString().padLeft(2, '0')}',
@@ -369,60 +385,6 @@ class _Clients extends ConsumerWidget {
   }
 }
 
-class _Wireless extends ConsumerWidget {
-  const _Wireless({this.embedded = false});
-
-  final bool embedded;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(iLinkProvider);
-    final wireless = state.data!.wireless;
-    final children = <Widget>[
-      if (wireless.isEmpty)
-        const ILinkEmpty('未获取到无线网络信息')
-      else
-        for (final wifi in wireless)
-          ILinkCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        wifi.ssid,
-                        style: p.AppTextStyle.headline.of(context),
-                      ),
-                    ),
-                    ILinkStatusPill(wifi.up ? '已启用' : '已停用', online: wifi.up),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                ILinkKeyValue('射频', wifi.radio),
-                ILinkKeyValue('模式', wifi.mode),
-                ILinkKeyValue(
-                  '频段 / 信道',
-                  '${wifi.band.isEmpty ? '—' : wifi.band} / ${wifi.channel == 0 ? '自动' : wifi.channel}',
-                ),
-                ILinkKeyValue(
-                  '加密',
-                  wifi.encryption.isEmpty ? '—' : wifi.encryption,
-                ),
-              ],
-            ),
-          ),
-    ];
-    if (embedded) return Column(children: children);
-    return ILinkPage(
-      title: '无线网络',
-      refreshing: state.refreshing,
-      onRefresh: () => ref.read(iLinkProvider).refresh(),
-      children: children,
-    );
-  }
-}
-
 class _Interfaces extends ConsumerWidget {
   const _Interfaces({this.embedded = false});
 
@@ -486,6 +448,10 @@ class _ToolsState extends ConsumerState<_Tools> {
   final TextEditingController _link = TextEditingController();
   List<DownloadJob> _jobs = const [];
   List<String> _updates = const [];
+  int _pinnedUpdates = 0;
+  bool _checkingFirmware = false;
+  FirmwareInfo? _firmware;
+  String? _firmwareNote;
   bool _downloading = false;
   bool _checkingUpdates = false;
   bool _upgrading = false;
@@ -531,6 +497,38 @@ class _ToolsState extends ConsumerState<_Tools> {
       if (mounted) setState(() => _downloadNote = error.toString());
     } finally {
       if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _openTerminal() async {
+    if (!await confirmTerminal(context)) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ILinkTerminalPage(
+          service: SystemInfoService(ref.read(iLinkProvider).client),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _checkFirmware() async {
+    setState(() => _checkingFirmware = true);
+    try {
+      final info = await SystemInfoService(
+        ref.read(iLinkProvider).client,
+      ).firmware();
+      if (!mounted) return;
+      setState(() {
+        _firmware = info;
+        _firmwareNote = info.available.isEmpty
+            ? '当前 ${info.release} 已是最新'
+            : '有 ${info.available.length} 个基础组件新版本，需在网页端更新';
+      });
+    } catch (error) {
+      if (mounted) setState(() => _firmwareNote = error.toString());
+    } finally {
+      if (mounted) setState(() => _checkingFirmware = false);
     }
   }
 
@@ -609,10 +607,15 @@ class _ToolsState extends ConsumerState<_Tools> {
   Future<void> _checkUpdates() async {
     setState(() => _checkingUpdates = true);
     try {
-      final packages = await SystemInfoService(
+      final check = await SystemInfoService(
         ref.read(iLinkProvider).client,
       ).updates();
-      if (mounted) setState(() => _updates = packages);
+      if (mounted) {
+        setState(() {
+          _updates = check.packages;
+          _pinnedUpdates = check.pinned;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _downloadNote = error.toString());
     } finally {
@@ -762,11 +765,6 @@ class _ToolsState extends ConsumerState<_Tools> {
   Widget build(BuildContext context) {
     final state = ref.watch(iLinkProvider);
     final data = state.data!;
-    final themeLabel = switch (state.themeIndex) {
-      1 => '浅色',
-      2 => '深色',
-      _ => '跟随系统',
-    };
     return ILinkPage(
       title: '工具',
       refreshing: state.refreshing,
@@ -883,6 +881,8 @@ class _ToolsState extends ConsumerState<_Tools> {
             ],
           ),
         ),
+        const ILinkSectionTitle('终端'),
+        ILinkTerminalTile(onTap: _openTerminal),
         const ILinkSectionTitle('网络体检'),
         _fastNetCard(),
         const ILinkSectionTitle('外观'),
@@ -890,14 +890,27 @@ class _ToolsState extends ConsumerState<_Tools> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              p.OutlinedButton(
-                onPressed: state.cycleTheme,
-                child: Text('主题：$themeLabel'),
+              Text('主题', style: p.AppTextStyle.subheadline.of(context)),
+              const SizedBox(height: 8),
+              p.SegmentedControl<String>(
+                segments: const [
+                  ('light', '浅色'),
+                  ('dark', '深色'),
+                  ('system', '跟随'),
+                ],
+                value: state.themeMode,
+                onChanged: (value) => state.setThemeMode(value),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Liquid Glass',
+                style: p.AppTextStyle.subheadline.of(context),
               ),
               const SizedBox(height: 8),
-              p.OutlinedButton(
-                onPressed: state.toggleGlass,
-                child: Text('Liquid Glass：${state.glassEnabled ? '标准' : '关闭'}'),
+              p.SegmentedControl<bool>(
+                segments: const [(true, '标准'), (false, '关闭')],
+                value: state.glassEnabled,
+                onChanged: (value) => state.setGlass(value),
               ),
             ],
           ),
@@ -914,7 +927,7 @@ class _ToolsState extends ConsumerState<_Tools> {
                     Text('固件', style: p.AppTextStyle.headline.of(context)),
                     const SizedBox(height: 6),
                     Text(
-                      data.release,
+                      _firmware?.release ?? data.release,
                       style: p.AppTextStyle.caption1
                           .of(context)
                           .copyWith(
@@ -925,12 +938,31 @@ class _ToolsState extends ConsumerState<_Tools> {
                     ),
                     const SizedBox(height: 12),
                     p.OutlinedButton(
+                      onPressed: _checkingFirmware ? null : _checkFirmware,
+                      child: Text(_checkingFirmware ? '检查中…' : '检查固件更新'),
+                    ),
+                    const SizedBox(height: 8),
+                    p.OutlinedButton(
                       onPressed: _openLuCiFlash,
                       child: const Text('打开固件升级'),
                     ),
+                    if (_firmwareNote != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _firmwareNote!,
+                          style: p.AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(
+                                color: p.Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ),
                     const SizedBox(height: 6),
                     Text(
-                      '在系统浏览器中打开 LuCI；不由此应用下发固件指令。',
+                      '刷写固件在系统浏览器中完成；应用只检查系统组件版本。',
                       style: p.AppTextStyle.caption1
                           .of(context)
                           .copyWith(
@@ -952,7 +984,11 @@ class _ToolsState extends ConsumerState<_Tools> {
                     Text('应用', style: p.AppTextStyle.headline.of(context)),
                     const SizedBox(height: 6),
                     Text(
-                      _updates.isEmpty ? '尚未检查' : '${_updates.length} 个可更新',
+                      _updates.isEmpty
+                          ? (_pinnedUpdates > 0
+                                ? '$_pinnedUpdates 个由系统锁定'
+                                : '尚未检查')
+                          : '${_updates.length} 个可更新',
                       style: p.AppTextStyle.caption1
                           .of(context)
                           .copyWith(
@@ -1047,7 +1083,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.7.1\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.7.2\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

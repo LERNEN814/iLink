@@ -280,6 +280,9 @@ local module_routes = {
     ["downloader/remove"] = { module = "downloader", action = "remove", method = "POST" },
     ["system/services"] = { module = "systeminfo", action = "services", method = "GET" },
     ["system/updates"] = { module = "systeminfo", action = "updates", method = "GET" },
+    ["system/traffic"] = { module = "systeminfo", action = "traffic", method = "GET" },
+    ["system/exec"] = { module = "systeminfo", action = "exec", method = "POST" },
+    ["system/firmware"] = { module = "systeminfo", action = "firmware", method = "GET" },
     ["system/upgrade"] = { module = "systeminfo", action = "upgrade", method = "POST" },
     ["system/upgrade-status"] = { module = "systeminfo", action = "upgrade_status", method = "GET" }
 }

@@ -34,6 +34,43 @@ local function helper(name, arguments)
     return result
 end
 
+function M.traffic()
+    return helper("traffic", { sample = false })
+end
+
+function M.exec(body)
+    local command = type(body) == "table" and tostring(body.command or "") or ""
+    if command == "" then error("empty command") end
+    return helper("exec", { command = command })
+end
+
+-- iStoreOS publishes no online firmware API, so the closest stable signal is
+-- whether the vendor feed carries newer base-system packages.
+function M.firmware()
+    local releaseText = sys.exec(
+        ". /etc/openwrt_release 2>/dev/null; echo \"$DISTRIB_RELEASE\"; echo \"$DISTRIB_TARGET\"; echo \"$DISTRIB_DESCRIPTION\""
+    ) or ""
+    local release, target, description = releaseText:match("([^%c]*)%c+([^%c]*)%c+([^%c]*)")
+    local kernel = (sys.exec("uname -r") or ""):gsub("%s+$", "")
+    local available = {}
+    for line in (sys.exec("/bin/opkg list-upgradable 2>/dev/null") or ""):gmatch("[^%c]+") do
+        local name = line:match("^(%S+)%s+%-")
+        if name and name:match("^[%w%.%+_%-]+$") and name ~= "Multiple" then
+            available[#available + 1] = name
+        end
+        if #available > 60 then break end
+    end
+    table.sort(available)
+    return {
+        release = release ~= "" and release or "unknown",
+        description = description or "",
+        target = target or "",
+        kernel = kernel,
+        available = available,
+        count = #available
+    }
+end
+
 function M.upgrade()
     return helper("upgrade")
 end

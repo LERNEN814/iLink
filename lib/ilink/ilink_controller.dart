@@ -148,15 +148,34 @@ class ILinkController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> cycleTheme() async {
-    themeIndex = (themeIndex + 1) % 3;
+  /// Index into the theme cycle: 0 light, 1 dark, 2 follow system.
+  String get themeMode => switch (themeIndex) {
+    1 => 'dark',
+    2 => 'system',
+    _ => 'light',
+  };
+
+  Future<void> setThemeMode(String mode) async {
+    themeIndex = switch (mode) {
+      'dark' => 1,
+      'system' => 2,
+      _ => 0,
+    };
     await _storage.write(key: _themeKey, value: '$themeIndex');
     notifyListeners();
   }
 
-  Future<void> toggleGlass() async {
-    glassEnabled = !glassEnabled;
-    await _storage.write(key: _glassKey, value: '$glassEnabled');
+  Future<void> setGlass(bool enabled) async {
+    glassEnabled = enabled;
+    await _storage.write(key: _glassKey, value: '$enabled');
     notifyListeners();
   }
+
+  Future<void> cycleTheme() => setThemeMode(switch (themeMode) {
+    'light' => 'dark',
+    'dark' => 'system',
+    _ => 'light',
+  });
+
+  Future<void> toggleGlass() => setGlass(!glassEnabled);
 }

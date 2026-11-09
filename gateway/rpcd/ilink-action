@@ -1,16 +1,27 @@
 #!/usr/bin/lua
 -- Privileged helper for the actions the ilink gateway cannot perform itself.
 -- rpcd runs this as root; ubusd's ACL decides which callers may invoke it, and
--- both methods take a fixed argument set. No command text is ever executed.
+-- every method takes a fixed argument set.
 local json = require "luci.jsonc"
 local fs = require "nixio.fs"
 local sys = require "luci.sys"
+local nixio = require "nixio"
 
 local CONFIG_DIR = "/etc/openclash/config"
 local SERVICE = "/etc/init.d/openclash"
+local UPGRADE_SCRIPT = "/usr/libexec/ilink-upgrade.sh"
+local EXEC_SCRIPT = "/tmp/ilink-exec.sh"
 
 local function quote(value)
     return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
+end
+
+local function capture(command)
+    local handle = io.popen(command)
+    if not handle then return "" end
+    local output = handle:read("*a") or ""
+    handle:close()
+    return output
 end
 
 local function valid_config(name)
@@ -70,6 +81,112 @@ local function subscription_info(name)
     return reply(result)
 end
 
+-- Packages iStoreOS pins with `Status: ... hold` never upgrade via opkg, so a
+-- one-click upgrade would report them as pending forever.
+local function held_packages()
+    local held, current = {}, "?"
+    for line in (fs.readfile("/usr/lib/opkg/status") or ""):gmatch("[^%c]+") do
+        local name = line:match("^Package:%s*(%S+)")
+        if name then
+            current = name
+        elseif line:match("^Status:") and line:find("hold", 1, true) then
+            held[current] = true
+        end
+    end
+    return held
+end
+
+local function upgradable()
+    local held = held_packages()
+    local names = {}
+    for line in (capture("/bin/opkg list-upgradable 2>/dev/null")):gmatch("[^%c]+") do
+        local name = line:match("^(%S+)%s+%-")
+        if name and name:match("^[%w%.%+_%-]+$") and name ~= "Multiple"
+            and not held[name] then
+            names[#names + 1] = name
+        end
+        if #names > 200 then break end
+    end
+    table.sort(names)
+    return names
+end
+
+local function traffic()
+    local device = capture(
+        "ip route show default 2>/dev/null | sed -n 's/.*dev \\([^ ]*\\).*/\\1/p' | head -1"
+    ):gsub("%s+", "")
+    if device == "" then device = "eth0" end
+    local rx, tx = 0, 0
+    for line in (fs.readfile("/proc/net/dev") or ""):gmatch("[^%c]+") do
+        local name, values = line:match("^%s*([%w%.%-]+):%s*(.+)$")
+        if name == device then
+            local fields = {}
+            for value in values:gmatch("%d+") do fields[#fields + 1] = tonumber(value) end
+            rx = fields[1] or 0
+            tx = fields[9] or 0
+        end
+    end
+    local seconds, micros = nixio.gettimeofday()
+    return reply({
+        device = device,
+        rx = rx,
+        tx = tx,
+        ts = seconds + micros / 1000000
+    })
+end
+
+local function run_command(command)
+    if type(command) ~= "string" or command == "" or #command > 4000 then
+        return reply({ error = "invalid command" })
+    end
+    local line = string.char(10)
+    fs.writefile(EXEC_SCRIPT, "#!/bin/sh" .. line .. command .. line)
+    local handle = io.popen("timeout 30 /bin/sh " .. EXEC_SCRIPT .. " 2>&1; echo __ILINK_EXIT:$?")
+    local output = handle and handle:read("*a") or ""
+    if handle then handle:close() end
+    local code = tonumber(output:match("__ILINK_EXIT:(%d+)")) or 1
+    output = output:gsub("%c*__ILINK_EXIT:%d+%c*$", "")
+    return reply({ output = output, code = code })
+end
+
+local function start_upgrade()
+    local running = {}
+    for _, item in ipairs({
+        { name = "openclash", process = "clash" },
+        { name = "alist", process = "alist" },
+        { name = "aria2", process = "aria2c" },
+        { name = "qbittorrent", process = "qbittorrent-nox" },
+        { name = "fastnet", process = "FastNet" },
+        { name = "ddnsto", process = "ddnsto" }
+    }) do
+        if sys.call("pidof " .. item.process .. " >/dev/null 2>&1") == 0 then
+            running[#running + 1] = item.name
+        end
+    end
+    fs.writefile("/tmp/ilink-upgrade.services", table.concat(running, " "))
+    fs.writefile("/tmp/ilink-upgrade.log", "")
+    sys.call("setsid " .. UPGRADE_SCRIPT .. " >/tmp/ilink-upgrade.log 2>&1 &")
+    return reply({ started = true, services = running })
+end
+
+local function upgrade_status()
+    local log = fs.readfile("/tmp/ilink-upgrade.log") or ""
+    local state = "running"
+    if log:find("DONE", 1, true) then
+        state = "done"
+    elseif log:find("ERROR", 1, true) then
+        state = "error"
+    elseif log == "" then
+        state = "idle"
+    end
+    local tail = {}
+    for line in log:gmatch("[^%c]+") do
+        tail[#tail + 1] = line
+        if #tail > 8 then table.remove(tail, 1) end
+    end
+    return reply({ state = state, tail = tail })
+end
+
 local function call(method)
     local input = io.stdin and io.stdin:read("*a") or ""
     local body = {}
@@ -84,59 +201,20 @@ local function call(method)
         return reply({ done = op })
     end
 
-    if method == "upgrade" then
-        local running = {}
-        for _, item in ipairs({
-            { name = "openclash", process = "clash" },
-            { name = "alist", process = "alist" },
-            { name = "aria2", process = "aria2c" },
-            { name = "qbittorrent", process = "qbittorrent-nox" },
-            { name = "fastnet", process = "FastNet" },
-            { name = "ddnsto", process = "ddnsto" }
-        }) do
-            if sys.call("pidof " .. item.process .. " >/dev/null 2>&1") == 0 then
-                running[#running + 1] = item.name
-            end
-        end
-        fs.writefile("/tmp/ilink-upgrade.services", table.concat(running, " "))
-        fs.writefile("/tmp/ilink-upgrade.log", "")
-        sys.call("setsid /usr/libexec/ilink-upgrade.sh >/tmp/ilink-upgrade.log 2>&1 &")
-        return reply({ started = true, services = running })
-    end
-
-    if method == "upgrade-status" then
-        local log = fs.readfile("/tmp/ilink-upgrade.log") or ""
-        local state = "running"
-        if log:find("DONE", 1, true) then
-            state = "done"
-        elseif log:find("ERROR", 1, true) then
-            state = "error"
-        elseif log == "" then
-            state = "idle"
-        end
-        local tail = {}
-        for line in log:gmatch("[^%c]+") do
-            tail[#tail + 1] = line
-            if #tail > 8 then table.remove(tail, 1) end
-        end
-        return reply({ state = state, tail = tail })
-    end
+    if method == "traffic" then return traffic() end
+    if method == "exec" then return run_command(body.command) end
+    if method == "upgrade" then return start_upgrade() end
+    if method == "upgrade-status" then return upgrade_status() end
 
     if method == "updates" then
-        local names = {}
-        local handle = io.popen("/bin/opkg list-upgradable 2>/dev/null")
-        if handle then
-            for line in handle:lines() do
-                local name = line:match("^(%S+)%s+%-")
-                if name and name:match("^[%w%.%+%-_]+$") and name ~= "Multiple" then
-                    names[#names + 1] = name
-                end
-                if #names > 200 then break end
-            end
-            handle:close()
+        local names = upgradable()
+        local held = held_packages()
+        local pinned = 0
+        for line in (capture("/bin/opkg list-upgradable 2>/dev/null")):gmatch("[^%c]+") do
+            local name = line:match("^(%S+)%s+%-")
+            if name and held[name] then pinned = pinned + 1 end
         end
-        table.sort(names)
-        return reply({ count = #names, packages = names })
+        return reply({ count = #names, packages = names, pinned = pinned })
     end
 
     if method == "subscription-info" then
@@ -163,6 +241,8 @@ if arg[1] == "list" then
         ["switch-config"] = { name = "" },
         ["subscription-info"] = { name = "" },
         updates = { refresh = false },
+        traffic = { sample = false },
+        exec = { command = "" },
         upgrade = { confirm = false },
         ["upgrade-status"] = { tail = 0 }
     })

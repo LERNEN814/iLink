@@ -321,3 +321,48 @@ List<ProxyGroup> orderedProxyGroups(List<ProxyGroup> groups) {
     });
   return [for (final entry in indexed) entry.$2];
 }
+
+/// Raw WAN counters; rates are derived from two samples.
+class TrafficSample {
+  const TrafficSample({
+    required this.device,
+    required this.rx,
+    required this.tx,
+    required this.at,
+  });
+
+  final String device;
+  final double rx;
+  final double tx;
+  final double at;
+}
+
+class UpdateCheck {
+  const UpdateCheck({required this.packages, required this.pinned});
+
+  final List<String> packages;
+
+  /// Packages the vendor pins with `hold`: opkg never upgrades them.
+  final int pinned;
+}
+
+class FirmwareInfo {
+  const FirmwareInfo({
+    required this.release,
+    required this.target,
+    required this.kernel,
+    required this.available,
+  });
+
+  final String release;
+  final String target;
+  final String kernel;
+  final List<String> available;
+}
+
+class ExecResult {
+  const ExecResult({required this.output, required this.code});
+
+  final String output;
+  final int code;
+}

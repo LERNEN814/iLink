@@ -74,16 +74,18 @@ void main() {
     expect(find.text('文件'), findsOneWidget);
     // Sections start collapsed and reveal their contents on demand.
     expect(find.text('phone'), findsNothing);
+    await tester.ensureVisible(find.text('设备'));
     await tester.tap(find.text('设备'));
     await tester.pumpAndSettle();
     expect(find.text('phone'), findsOneWidget);
     expect(find.text('192.168.100.2'), findsOneWidget);
+    await tester.ensureVisible(find.text('网络接口'));
     await tester.tap(find.text('网络接口'));
     await tester.pumpAndSettle();
     expect(find.text('br-lan'), findsOneWidget);
-    await tester.tap(find.text('无线网络'));
-    await tester.pumpAndSettle();
-    expect(find.text('未获取到无线网络信息'), findsOneWidget);
+    // v0.7.2 dropped the wireless card: the AP has no usable API.
+    expect(find.text('无线网络'), findsNothing);
+    expect(find.text('实时流量'), findsOneWidget);
 
     await tester.tap(find.text('工具'));
     await tester.pump(const Duration(milliseconds: 400));

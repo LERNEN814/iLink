@@ -189,11 +189,46 @@ class SystemInfoService {
     );
   }
 
-  Future<List<String>> updates() async {
+  Future<UpdateCheck> updates() async {
     final result = await client.json('GET', 'system/updates');
-    return (result['packages'] as List? ?? const [])
-        .map((item) => '$item')
-        .toList();
+    return UpdateCheck(
+      packages: (result['packages'] as List? ?? const [])
+          .map((item) => '$item')
+          .toList(),
+      pinned: (result['pinned'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Future<TrafficSample> traffic() async {
+    final result = await client.json('GET', 'system/traffic');
+    return TrafficSample(
+      device: result['device']?.toString() ?? '',
+      rx: (result['rx'] as num?)?.toDouble() ?? 0,
+      tx: (result['tx'] as num?)?.toDouble() ?? 0,
+      at: (result['ts'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  Future<FirmwareInfo> firmware() async {
+    final result = await client.json('GET', 'system/firmware');
+    return FirmwareInfo(
+      release: result['release']?.toString() ?? '',
+      target: result['target']?.toString() ?? '',
+      kernel: result['kernel']?.toString() ?? '',
+      available: (result['available'] as List? ?? const [])
+          .map((item) => '$item')
+          .toList(),
+    );
+  }
+
+  Future<ExecResult> exec(String command) async {
+    final result = await client.json('POST', 'system/exec', {
+      'command': command,
+    });
+    return ExecResult(
+      output: result['output']?.toString() ?? '',
+      code: (result['code'] as num?)?.toInt() ?? 0,
+    );
   }
 }
 
