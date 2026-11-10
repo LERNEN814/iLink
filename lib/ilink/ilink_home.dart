@@ -8,6 +8,7 @@ import 'package:prism_ui/prism_ui.dart' as p;
 import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 import 'package:luci_mobile/ilink/ilink_theme.dart';
+import 'package:luci_mobile/ilink/ilink_ip_quality.dart';
 import 'package:luci_mobile/ilink/ilink_terminal.dart';
 import 'package:luci_mobile/ilink/ilink_traffic.dart';
 import 'package:luci_mobile/ilink/ilink_feature_api.dart';
@@ -250,6 +251,9 @@ class _DashboardState extends ConsumerState<_Dashboard> {
               ),
             ),
           ],
+        ),
+        ILinkIpQualityCard(
+          service: OpenClashService(ref.read(iLinkProvider).client),
         ),
         ILinkTrafficCard(
           service: SystemInfoService(ref.read(iLinkProvider).client),
@@ -1083,7 +1087,7 @@ class _ToolsState extends ConsumerState<_Tools> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'iLink v0.7.2\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
+            'iLink v0.7.3\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
             textAlign: TextAlign.center,
             style: p.AppTextStyle.caption1
                 .of(context)

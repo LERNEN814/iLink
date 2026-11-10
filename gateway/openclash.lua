@@ -215,6 +215,15 @@ function M.switch_config(body)
     return action("switch-config", { name = name })
 end
 
+function M.ipcheck()
+    local connection = require("ubus").connect()
+    if not connection then error("ubus unavailable") end
+    local result, code = connection:call("ilink-action", "ipcheck", { sample = false })
+    connection:close()
+    if not result or (code and code ~= 0) then error("helper rejected the request") end
+    return result
+end
+
 function M.subscription(body)
     local name = body.name
     if type(name) ~= "string" or not name:match("^[%w_%-]+") then

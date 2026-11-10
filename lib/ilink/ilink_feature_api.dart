@@ -33,6 +33,9 @@ class OpenClashService {
     return OpenClashData.fromJson({...results[0], ...results[1]});
   }
 
+  Future<IpQuality> ipCheck() async =>
+      IpQuality.fromJson(await client!.json('GET', 'openclash/ipcheck'));
+
   Future<List<ProxyConnection>> connectionList() async {
     final fake = _fakeData;
     if (fake != null) return fake.connections;

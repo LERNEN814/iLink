@@ -135,6 +135,90 @@ local function traffic()
     })
 end
 
+-- Ported from FlClash's ip_quality lookup: the exit address is read through the
+-- proxy, then public databases are asked about that address. Wave/hedge racing
+-- is dropped because one request per source is enough at human pacing.
+local function json_curl(url, extra)
+    local out = capture("/usr/bin/curl -sS -m 8 " .. (extra or "") .. " " .. quote(url))
+    if out == "" then return nil end
+    local ok, parsed = pcall(json.parse, out)
+    if not ok or type(parsed) ~= "table" then return nil end
+    return parsed
+end
+
+local function proxy_credentials()
+    local user = capture("uci -q get openclash.@authentication[0].username"):gsub("%s+$", "")
+    local password = capture("uci -q get openclash.@authentication[0].password"):gsub("%s+$", "")
+    if user == "" then return "" end
+    return " --proxy-user " .. quote(user .. ":" .. password)
+end
+
+local function declared_type(value)
+    if value == "isp" or value == "residential" then return "residential" end
+    if value == "business" or value == "education" or value == "government" then
+        return "business"
+    end
+    if value == "hosting" or value == "datacenter" then return "hosting" end
+    if value == "mobile" or value == "wireless" then return "mobile" end
+    return nil
+end
+
+local function ip_check()
+    local port = capture("uci -q get openclash.config.http_port"):gsub("%s+$", "")
+    if port == "" then port = "7890" end
+    local proxy = " --proxy " .. quote("http://127.0.0.1:" .. port) ..
+        proxy_credentials()
+    local exit_info = json_curl("https://ident.me/json", proxy)
+    if not exit_info or type(exit_info.ip) ~= "string" then
+        return reply({ error = "proxy unreachable" })
+    end
+    local ip = exit_info.ip
+    local details = json_curl("https://api.ipapi.is/?q=" .. ip)
+    local risk = json_curl("https://api.ipquery.io/" .. ip .. "?format=json")
+    local is_datacenter, is_mobile, is_proxy, is_vpn, is_tor, is_abuser =
+        false, false, false, false, false, false
+    if details then
+        is_datacenter = details.is_datacenter == true
+        is_mobile = details.is_mobile == true
+        is_proxy = details.is_proxy == true
+        is_vpn = details.is_vpn == true
+        is_tor = details.is_tor == true
+        is_abuser = details.is_abuser == true
+    end
+    if risk and type(risk.risk) == "table" then
+        is_datacenter = is_datacenter or risk.risk.is_datacenter == true
+        is_mobile = is_mobile or risk.risk.is_mobile == true
+        is_proxy = is_proxy or risk.risk.is_proxy == true
+        is_vpn = is_vpn or risk.risk.is_vpn == true
+        is_tor = is_tor or risk.risk.is_tor == true
+    end
+    local kind = declared_type(exit_info.type)
+    if is_datacenter then
+        kind = "hosting"
+    elseif kind == nil and is_mobile then
+        kind = "mobile"
+    end
+    if kind == nil then kind = "residential" end
+    local company = type(details) == "table" and details.company or nil
+    local organization = (type(company) == "table" and company.name)
+        or exit_info.aso or (type(details) == "table" and details.asn and details.asn.org)
+        or nil
+    return reply({
+        ip = ip,
+        type = kind,
+        organization = organization,
+        asn = exit_info.asn or (type(details) == "table" and details.asn and details.asn.asn) or nil,
+        country = exit_info.country,
+        countryCode = exit_info.cc,
+        city = exit_info.city,
+        isProxy = is_proxy,
+        isVpn = is_vpn,
+        isTor = is_tor,
+        isAbuser = is_abuser,
+        source = details and "ipapi.is" or (risk and "ipquery.io" or "ident.me")
+    })
+end
+
 local function run_command(command)
     if type(command) ~= "string" or command == "" or #command > 4000 then
         return reply({ error = "invalid command" })
@@ -202,6 +286,7 @@ local function call(method)
     end
 
     if method == "traffic" then return traffic() end
+    if method == "ipcheck" then return ip_check() end
     if method == "exec" then return run_command(body.command) end
     if method == "upgrade" then return start_upgrade() end
     if method == "upgrade-status" then return upgrade_status() end
@@ -242,6 +327,7 @@ if arg[1] == "list" then
         ["subscription-info"] = { name = "" },
         updates = { refresh = false },
         traffic = { sample = false },
+        ipcheck = { sample = false },
         exec = { command = "" },
         upgrade = { confirm = false },
         ["upgrade-status"] = { tail = 0 }

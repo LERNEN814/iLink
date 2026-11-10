@@ -366,3 +366,91 @@ class ExecResult {
   final String output;
   final int code;
 }
+
+/// Exit address and reputation, mirroring FlClash's `IpQuality` model.
+class IpQuality {
+  const IpQuality({
+    required this.ip,
+    required this.type,
+    required this.country,
+    required this.city,
+    required this.organization,
+    required this.asn,
+    required this.isProxy,
+    required this.isVpn,
+    required this.isTor,
+    required this.isAbuser,
+    required this.source,
+  });
+
+  factory IpQuality.fromJson(Map<String, dynamic> json) => IpQuality(
+    ip: json['ip']?.toString() ?? '',
+    type: json['type']?.toString() ?? 'residential',
+    country: json['country']?.toString() ?? '',
+    city: json['city']?.toString() ?? '',
+    organization: json['organization']?.toString() ?? '',
+    asn: (json['asn'] as num?)?.toInt(),
+    isProxy: json['isProxy'] == true,
+    isVpn: json['isVpn'] == true,
+    isTor: json['isTor'] == true,
+    isAbuser: json['isAbuser'] == true,
+    source: json['source']?.toString() ?? '',
+  );
+
+  final String ip;
+
+  /// residential, mobile, business or hosting.
+  final String type;
+  final String country;
+  final String city;
+  final String organization;
+  final int? asn;
+  final bool isProxy;
+  final bool isVpn;
+  final bool isTor;
+  final bool isAbuser;
+  final String source;
+
+  /// FlClash's rule: Tor or abuse reports make an address risky, hosting is
+  /// only acceptable, everything else counts as clean.
+  String get level => isTor || isAbuser
+      ? 'risky'
+      : type == 'hosting'
+      ? 'normal'
+      : 'good';
+
+  String get typeLabel => switch (type) {
+    'mobile' => '移动网络',
+    'business' => '商业宽带',
+    'hosting' => '机房 IP',
+    _ => '原生家宽',
+  };
+
+  String get levelLabel => switch (level) {
+    'risky' => '风险',
+    'normal' => '一般',
+    _ => '良好',
+  };
+
+  /// iLink's own 0-100 reading of the same facts; FlClash only shows a level.
+  int get score {
+    var value = switch (type) {
+      'residential' => 90,
+      'mobile' => 85,
+      'business' => 75,
+      _ => 45,
+    };
+    if (isProxy) value -= 10;
+    if (isVpn) value -= 10;
+    if (isTor) value -= 30;
+    if (isAbuser) value -= 20;
+    return value.clamp(0, 100);
+  }
+
+  List<String> get flags => [
+    if (isProxy) '代理标记',
+    if (isVpn) 'VPN 标记',
+    if (isTor) 'Tor 出口',
+    if (isAbuser) '滥用记录',
+  ];
+}
