@@ -3,6 +3,10 @@
     <!-- Android 13+ gates notifications behind a runtime grant. Requested
          only when the user turns background monitoring on. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Legacy direct writes to public Downloads on Android 9 and below. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"/>
     <application
         android:enableOnBackInvokedCallback="true"
         android:label="iLink"
@@ -11,7 +15,7 @@
         android:roundIcon="@mipmap/ic_launcher">
 
         <activity
-            android:name="io.flutter.embedding.android.FlutterActivity"
+            android:name="com.istoreos.ilink.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

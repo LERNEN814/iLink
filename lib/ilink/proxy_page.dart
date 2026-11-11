@@ -276,7 +276,7 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
           children: [
             Expanded(
               child: Text(
-                '延迟为整组并发实测，点击节点切换',
+                '节点测完即显示，点击节点切换',
                 style: p.AppTextStyle.caption1
                     .of(context)
                     .copyWith(
@@ -611,24 +611,34 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
     }
   }
 
-  /// Tests every group of the current config; the core races the nodes of each
-  /// group concurrently, so this finishes in one probe window, not per node.
+  /// Probes every node of the current config through a bounded worker pool.
+  /// Each result lands in the UI the moment its own probe returns, so nodes
+  /// light up one by one instead of all at once after the slowest finishes.
   Future<void> _testAll() async {
     final groups = _data?.groups ?? const [];
     if (groups.isEmpty || _testingAll) return;
     setState(() => _testingAll = true);
+    // Groups share nodes; test each address once.
+    final queue = List<String>.of({
+      for (final group in groups)
+        for (final node in group.nodes) node.name,
+    });
     try {
-      final results = await Future.wait([
-        for (final group in groups) _service.testGroupDelay(group.name),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        for (final delays in results) {
-          _delays.addAll(delays);
+      Future<void> worker() async {
+        while (queue.isNotEmpty) {
+          final node = queue.removeLast();
+          int delay;
+          try {
+            delay = await _service.testDelay(node);
+          } catch (_) {
+            delay = 0;
+          }
+          if (!mounted) return;
+          setState(() => _delays[node] = delay == 0 ? -1 : delay);
         }
-      });
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      }
+
+      await Future.wait([for (var i = 0; i < 6; i++) worker()]);
     } finally {
       if (mounted) setState(() => _testingAll = false);
     }

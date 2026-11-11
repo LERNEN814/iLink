@@ -262,6 +262,7 @@ local module_routes = {
     ["files/rename"] = { module = "files", action = "rename", method = "POST" },
     ["files/remove"] = { module = "files", action = "remove", method = "POST" },
     ["files/download"] = { module = "files", action = "download", method = "POST" },
+    ["files/stream-ticket"] = { module = "files", action = "stream_ticket", method = "POST" },
     ["files/upload"] = { module = "files", action = "upload", method = "POST" },
     ["files/copy"] = { module = "files", action = "copy", method = "POST" },
     ["files/move"] = { module = "files", action = "move", method = "POST" },
@@ -289,8 +290,49 @@ local module_routes = {
     ["system/upgrade-status"] = { module = "systeminfo", action = "upgrade_status", method = "GET" }
 }
 
+-- Percent-decoded query lookup; used by the media stream route.
+local function query_value(raw, key)
+    for pair in (raw or ""):gmatch("[^&]+") do
+        local k, v = pair:match("^([^=]*)=(.*)$")
+        if k == key then
+            -- Form decoding order: spaces first, then percent escapes, so a
+            -- literal + that arrived as %2B survives.
+            return v:gsub("%+", " "):gsub("%%(%x%x)", function(hex)
+                return string.char(tonumber(hex, 16))
+            end)
+        end
+    end
+    return ""
+end
+
 function handle_request(env)
     local path = env.PATH_INFO or ""
+    -- Media streaming answers by stream ticket or device token and speaks raw
+    -- bytes, so it bypasses the JSON envelope and the JSON rate limiter.
+    if path == "/v1/files/stream" then
+        local query = env.QUERY_STRING or ""
+        if query_value(query, "ticket") ~= "" then
+            local ok, resolved = pcall(
+                require("files").stream_path,
+                query_value(query, "ticket"),
+                query_value(query, "path")
+            )
+            if not ok then
+                audit("stream ticket rejected: " .. tostring(resolved))
+                return respond(401, { error = "unauthorized" })
+            end
+            env.STREAM_PATH = resolved
+        elseif not authenticated(env) then
+            audit("authentication failed")
+            return respond(401, { error = "unauthorized" })
+        end
+        local ok, err = pcall(require("files").stream_raw, env)
+        if not ok then
+            audit("stream failed: " .. tostring(err))
+            return respond(503, { error = "unavailable" })
+        end
+        return
+    end
     local handler = routes[path]
     local body = {}
     local module = module_routes[path:match("^/v1/(.+)$") or ""]
@@ -313,6 +355,7 @@ function handle_request(env)
         end
         body = decoded
     end
+
     local now = os.time()
     if now ~= bucket_at then bucket_at, bucket_count = now, 0 end
     bucket_count = bucket_count + 1

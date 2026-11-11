@@ -8,6 +8,21 @@ local MAX_READ = 32 * 1024 * 1024
 local MAX_PREVIEW_TEXT = 256 * 1024
 local MAX_PREVIEW_IMAGE = 8 * 1024 * 1024
 
+-- Streaming: raw bytes with Range support for the built-in media player and
+-- uncapped downloads. Tickets keep long-lived device credentials out of the
+-- player process.
+local TICKET_DIR = "/tmp/ilink-stream-tickets"
+local TICKET_TTL = 900
+local STREAM_CHUNK = 65536
+local media_types = {
+    mp4 = "video/mp4", mkv = "video/x-matroska", avi = "video/x-msvideo",
+    mov = "video/quicktime", webm = "video/webm", flv = "video/x-flv",
+    ts = "video/mp2t", ["m3u8"] = "application/vnd.apple.mpegurl",
+    mp3 = "audio/mpeg", flac = "audio/flac", aac = "audio/aac",
+    m4a = "audio/mp4", wav = "audio/x-wav", opus = "audio/opus",
+    ogg = "audio/ogg", oga = "audio/ogg"
+}
+
 local function canonical(relative, must_exist)
     if type(relative) ~= "string" or #relative > 1024 or relative:find("%z") or
         relative:find("[\r\n]") or relative:find("\\") or relative:find("%.%.") or
@@ -145,6 +160,120 @@ function M.download(body)
     local encoded = encode_file(source)
     if encoded == "" and stat.size > 0 then error("read failed") end
     return { name = fs.basename(source), size = stat.size, base64 = encoded }
+end
+
+-- A short-lived, path-locked credential so the media player never holds the
+-- device token. Expired tickets are swept on every issue.
+function M.stream_ticket(body)
+    local source = canonical(body.path)
+    local stat = fs.stat(source)
+    if stat.type ~= "reg" then error("not a file") end
+    fs.mkdirr(TICKET_DIR)
+    local now = os.time()
+    for name in fs.dir(TICKET_DIR) do
+        local path = TICKET_DIR .. "/" .. name
+        local meta = fs.stat(path)
+        if meta and now - (meta.mtime or 0) > TICKET_TTL then fs.unlink(path) end
+    end
+    local handle = io.popen("cat /proc/sys/kernel/random/uuid 2>/dev/null")
+    local ticket = handle and (handle:read("*l") or "") or ""
+    if handle then handle:close() end
+    ticket = ticket:gsub("%-", "")
+    if #ticket ~= 32 then error("cannot create stream ticket") end
+    if not fs.writefile(TICKET_DIR .. "/" .. ticket, source) then
+        error("cannot store stream ticket")
+    end
+    return { ticket = ticket, expires = now + TICKET_TTL }
+end
+
+-- Confirms a ticket still matches the requested path; the dispatcher has
+-- already verified the caller by ticket or device token.
+function M.stream_path(ticket, requested)
+    if type(ticket) ~= "string" or not ticket:match("^%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$") then
+        error("invalid ticket")
+    end
+    local file = TICKET_DIR .. "/" .. ticket
+    local stored = fs.readfile(file)
+    if not stored then error("unknown ticket") end
+    local meta = fs.stat(file)
+    if not meta or os.time() - (meta.mtime or 0) > TICKET_TTL then
+        fs.unlink(file)
+        error("ticket expired")
+    end
+    local source = stored:gsub("%s+$", "")
+    if requested ~= "" and requested ~= source then error("ticket path mismatch") end
+    return source
+end
+
+-- Raw byte response with HTTP Range support; binary-safe chunked io.
+-- Control characters come from string.char so shell heredocs can never
+-- corrupt the escapes again.
+function M.stream_raw(env)
+    local send = type(uhttpd) == "table" and uhttpd.send or io.write
+    local raw_path = env.STREAM_PATH or ""
+    local source
+    if raw_path:sub(1, 1) == "/" then
+        -- Absolute form only arrives from a validated stream ticket, which
+        -- stores canonical paths; still refuse traversal characters. Plain
+        -- finds only: NUL inside a Lua pattern breaks the parser.
+        local clean = true
+        for i = 1, #raw_path do
+            local byte = raw_path:byte(i)
+            if byte == 0 or byte == 13 or byte == 10 or byte == 92 then
+                clean = false
+                break
+            end
+        end
+        if not clean or raw_path:find("..", 1, true) then
+            error("invalid path")
+        end
+        source = raw_path
+    else
+        source = canonical(raw_path)
+    end
+    local stat = fs.stat(source)
+    if not stat or stat.type ~= "reg" then
+        send("Status: 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+        return
+    end
+    local size = stat.size or 0
+    local start_pos, end_pos = 0, size - 1
+    local partial = false
+    local from, to = (env.HTTP_RANGE or ""):match("^bytes=(%d+)%-(%d*)$")
+    if from then
+        start_pos = tonumber(from)
+        end_pos = to ~= "" and tonumber(to) or size - 1
+        if start_pos >= size or end_pos < start_pos then
+            send("Status: 416 Range Not Satisfiable\r\n")
+            send("Content-Range: bytes */" .. size .. "\r\n")
+            send("Content-Length: 0\r\n\r\n")
+            return
+        end
+        end_pos = math.min(end_pos, size - 1)
+        partial = true
+    end
+    local mime = media_types[extension_of(source)] or "application/octet-stream"
+    local length = end_pos - start_pos + 1
+    send("Status: " .. (partial and "206 Partial Content" or "200 OK") .. "\r\n")
+    send("Content-Type: " .. mime .. "\r\n")
+    send("Accept-Ranges: bytes\r\n")
+    send("Cache-Control: no-store\r\n")
+    if partial then
+        send("Content-Range: bytes " .. start_pos .. "-" .. end_pos .. "/" .. size .. "\r\n")
+    end
+    send("Content-Length: " .. length .. "\r\n\r\n")
+    if env.REQUEST_METHOD == "HEAD" then return end
+    local input = io.open(source, "rb")
+    if not input then return end
+    if start_pos > 0 then input:seek("set", start_pos) end
+    local remaining = length
+    while remaining > 0 do
+        local chunk = input:read(math.min(STREAM_CHUNK, remaining))
+        if not chunk or #chunk == 0 then break end
+        send(chunk)
+        remaining = remaining - #chunk
+    end
+    input:close()
 end
 
 function M.copy(body)

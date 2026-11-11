@@ -1,17 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/material.dart' show MaterialPageRoute;
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:prism_ui/prism_ui.dart' as p;
 import 'package:prism_ui/icons/glyph.dart';
 import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_feature_api.dart';
 import 'package:luci_mobile/ilink/ilink_feature_models.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
+import 'package:luci_mobile/ilink/ilink_video_player.dart';
 import 'package:luci_mobile/ilink/ilink_widgets.dart';
 
 class FilesPage extends ConsumerStatefulWidget {
@@ -37,6 +38,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
   bool _loading = true;
   bool _busy = false;
   bool _descending = false;
+  final Map<String, double?> _downloads = {};
 
   @override
   void initState() {
@@ -241,10 +243,117 @@ class _FilesPageState extends ConsumerState<FilesPage> {
         _search.clear();
       });
       _refresh();
-    } else if (_source == 0) {
-      _preview(entry);
     } else {
-      _download(entry);
+      _confirmOpen(entry);
+    }
+  }
+
+  static bool _isMedia(String name) {
+    const media = {
+      'mp4',
+      'mkv',
+      'avi',
+      'mov',
+      'webm',
+      'flv',
+      'ts',
+      'm3u8',
+      'mp3',
+      'flac',
+      'aac',
+      'm4a',
+      'wav',
+      'opus',
+      'ogg',
+      'oga',
+    };
+    final dot = name.lastIndexOf('.');
+    return dot > 0 && media.contains(name.substring(dot + 1).toLowerCase());
+  }
+
+  static bool _isTextOrImage(String name) {
+    const types = {
+      'txt',
+      'log',
+      'conf',
+      'yaml',
+      'yml',
+      'json',
+      'sh',
+      'lua',
+      'md',
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    };
+    final dot = name.lastIndexOf('.');
+    return dot > 0 && types.contains(name.substring(dot + 1).toLowerCase());
+  }
+
+  Future<void> _confirmOpen(FileEntry entry) async {
+    final previewable = _source == 0
+        ? (_isMedia(entry.name) || _isTextOrImage(entry.name))
+        : false;
+    final choice = await p.showFloatingDialog<String>(
+      context: context,
+      child: p.AlertDialog(
+        title: entry.name,
+        actions: [
+          p.TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          p.TextButton(
+            onPressed: previewable
+                ? () => Navigator.of(context).pop('preview')
+                : null,
+            child: const Text('预览'),
+          ),
+          p.TextButton(
+            onPressed: () => Navigator.of(context).pop('download'),
+            child: const Text('下载'),
+          ),
+        ],
+        child: Text(
+          '${formatBytes(entry.size)}\n'
+          '${previewable ? '可预览或下载' : '此类型仅支持下载'}',
+          style: p.AppTextStyle.caption1
+              .of(context)
+              .copyWith(
+                color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      ),
+    );
+    if (choice == 'preview') {
+      if (_isMedia(entry.name)) {
+        await _play(entry);
+      } else {
+        await _preview(entry);
+      }
+    } else if (choice == 'download') {
+      await _download(entry);
+    }
+  }
+
+  Future<void> _play(FileEntry entry) async {
+    try {
+      final stream = await _service.videoStream(entry.path);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ILinkVideoPlayerPage(
+            url: stream.url,
+            title: entry.name,
+            verifyTls: stream.verifyTls,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
     }
   }
 
@@ -260,43 +369,118 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     await _refresh();
   }
 
+  static String _mimeOf(String name) {
+    const video = {
+      'mp4': 'video/mp4',
+      'mkv': 'video/x-matroska',
+      'avi': 'video/x-msvideo',
+      'mov': 'video/quicktime',
+      'webm': 'video/webm',
+      'ts': 'video/mp2t',
+    };
+    const audio = {
+      'mp3': 'audio/mpeg',
+      'flac': 'audio/flac',
+      'aac': 'audio/aac',
+      'm4a': 'audio/mp4',
+      'wav': 'audio/x-wav',
+      'ogg': 'audio/ogg',
+    };
+    const image = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+    };
+    final dot = name.lastIndexOf('.');
+    final extension = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
+    return video[extension] ??
+        audio[extension] ??
+        image[extension] ??
+        'application/octet-stream';
+  }
+
+  static const _saveChannel = MethodChannel('ilink/save');
+
+  Future<String> _save(File temp, String name, String mime) async {
+    try {
+      return await _saveChannel
+              .invokeMethod<String>('saveDownloaded', {
+                'tempPath': temp.path,
+                'name': name,
+                'mime': mime,
+              })
+              .timeout(const Duration(seconds: 20)) ??
+          temp.path;
+    } on MissingPluginException {
+      // Test or desktop builds have no platform channel; keep the temp copy.
+      return temp.path;
+    }
+  }
+
   Future<void> _download(FileEntry entry) async {
-    if (entry.size > 32 * 1024 * 1024) {
-      setState(() => _error = 'v0.2 下载上限为 32 MB；大文件传输任务将在后续版本提供');
+    // AList payloads still travel through the gateway as base64 JSON, which
+    // cannot grow unbounded; router files stream raw and have no cap.
+    if (_source == 1) {
+      if (entry.size > 32 * 1024 * 1024) {
+        setState(() => _error = 'AList 下载上限为 32 MB');
+        return;
+      }
+      await _run(() async {
+        final bytes = await _downloadBytes(entry);
+        final temp = await File(
+          '${Directory.systemTemp.path}/${entry.name}',
+        ).writeAsBytes(bytes, flush: true);
+        await _save(temp, entry.name, _mimeOf(entry.name));
+      });
       return;
     }
-    setState(() => _busy = true);
+    if (_downloads.containsKey(entry.path)) return;
+    setState(() => _downloads[entry.path] = null);
+    File? temp;
     try {
-      final bytes = await _downloadBytes(entry);
-      final directory = await getApplicationDocumentsDirectory();
-      var target = File('${directory.path}/${entry.name}');
-      var suffix = 1;
-      while (await target.exists()) {
-        final dot = entry.name.lastIndexOf('.');
-        final stem = dot > 0 ? entry.name.substring(0, dot) : entry.name;
-        final extension = dot > 0 ? entry.name.substring(dot) : '';
-        target = File('${directory.path}/$stem ($suffix)$extension');
-        suffix++;
-      }
-      await target.writeAsBytes(bytes, flush: true);
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      // Staged in the OS temp dir; the platform channel moves it to
+      // Download/idownload right after, so the exact location is invisible.
+      temp = File(
+        '${Directory.systemTemp.path}/idownload-$stamp-${entry.name}',
+      );
+      await _service.downloadTo(
+        entry.path,
+        temp.path,
+        onProgress: (received, total) {
+          if (!mounted) return;
+          setState(() => _downloads[entry.path] = received / total);
+        },
+      );
+      if (!mounted) return;
+      setState(() => _downloads[entry.path] = 1.0);
+      final location = await _save(temp, entry.name, _mimeOf(entry.name));
+      temp = null;
       if (!mounted) return;
       await p.showFloatingDialog<void>(
         context: context,
         child: p.AlertDialog(
-          title: '已保存到应用文档目录',
+          title: '下载完成',
           actions: [
             p.TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('关闭'),
             ),
           ],
-          child: Text('${target.path}\n${formatBytes(bytes.length)}'),
+          child: Text('${entry.name}\n$location'),
         ),
       );
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error = error.toString());
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      temp?.delete().ignore();
+      if (mounted) {
+        setState(() => _downloads.remove(entry.path));
+      }
     }
   }
 
@@ -540,8 +724,20 @@ class _FilesPageState extends ConsumerState<FilesPage> {
                             ],
                           ),
                         ),
-                        if (_busy)
-                          const p.ActivityIndicator(size: 18)
+                        if (!entry.directory &&
+                            _downloads.containsKey(entry.path))
+                          _downloads[entry.path] == null
+                              ? const p.ActivityIndicator(size: 18)
+                              : Text(
+                                  '${(_downloads[entry.path]! * 100).round()}%',
+                                  style: p.AppTextStyle.caption1
+                                      .of(context)
+                                      .copyWith(
+                                        color: p.Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
+                                )
                         else
                           Text(entry.directory ? '›' : '↓'),
                       ],

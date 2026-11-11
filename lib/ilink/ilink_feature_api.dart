@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:luci_mobile/ilink/ilink_api.dart';
@@ -382,5 +383,32 @@ class FileService {
     if (_fakeEntries != null) return Uint8List(0);
     final result = await client!.json('POST', 'files/download', {'path': path});
     return base64Decode(result['base64'] as String);
+  }
+
+  /// Streams a router file to [savePath] with no size cap.
+  Future<void> downloadTo(
+    String path,
+    String savePath, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    if (_fakeEntries != null) {
+      // The fake never touches the network or the platform channel.
+      File(savePath).writeAsBytesSync(List<int>.generate(64, (i) => i));
+      return;
+    }
+    await client!.downloadFile(
+      '/v1/files/stream',
+      {'path': path},
+      savePath,
+      onProgress: onProgress,
+    );
+  }
+
+  /// A ticketed mpv URL for the built-in video player.
+  Future<({String url, bool verifyTls})> videoStream(String path) async {
+    if (_fakeEntries != null) {
+      throw UnsupportedError('视频预览在演示数据下不可用');
+    }
+    return client!.videoStreamUrl(path);
   }
 }

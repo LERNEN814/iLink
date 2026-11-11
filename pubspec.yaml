@@ -1,7 +1,7 @@
 name: luci_mobile
 description: "iLink: a private iStoreOS management app based on LuCI Mobile"
 publish_to: 'none'
-version: 0.7.4+14
+version: 0.7.5+15
 
 environment:
   sdk: ^3.10.0
@@ -28,6 +28,9 @@ dependencies:
       url: https://github.com/chen08209/prism_ui.git
       ref: 63450c0ac0e8e1b2c0f3ed4ad7926dc94e083185
   file_picker: ^13.3.2
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
 
 dependency_overrides:
   # Android-only: skip the Apple-only native hook that fails on Windows paths

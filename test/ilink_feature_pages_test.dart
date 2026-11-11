@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prism_ui/prism_ui.dart' as p;
+import 'package:flutter/services.dart';
 import 'package:luci_mobile/ilink/files_page.dart';
 import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_feature_api.dart';
@@ -185,6 +186,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(service.connectionLoads, 1);
     expect(find.text('example.com:443'), findsOneWidget);
+  });
+
+  testWidgets('tapping a file asks for preview or download', (tester) async {
+    await pump(tester, FilesPage(service: FileService.fake(_entries)));
+    await tester.tap(find.text('note.txt'));
+    await tester.pumpAndSettle();
+    expect(find.text('预览'), findsOneWidget);
+    expect(find.text('下载'), findsOneWidget);
+
+    await tester.tap(find.text('预览'));
+    await tester.pumpAndSettle();
+    // The fake preview answers as text.
+    expect(find.text('preview'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('router downloads stream past the old 32 MB cap', (tester) async {
+    const saveChannel = MethodChannel('ilink/save');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      saveChannel,
+      (call) async => 'Download/idownload/${call.arguments['name']}',
+    );
+    await pump(tester, FilesPage(service: FileService.fake(_entries)));
+    await tester.tap(find.text('note.txt'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下载'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('下载完成'), findsOneWidget);
+    expect(find.textContaining('Download/idownload'), findsOneWidget);
+    // No row keeps spinning after the transfer finished.
+    expect(find.byType(p.ActivityIndicator), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('files page lists entries and offers long-press actions', (
