@@ -170,12 +170,4 @@ class ILinkController extends ChangeNotifier {
     await _storage.write(key: _glassKey, value: '$enabled');
     notifyListeners();
   }
-
-  Future<void> cycleTheme() => setThemeMode(switch (themeMode) {
-    'light' => 'dark',
-    'dark' => 'system',
-    _ => 'light',
-  });
-
-  Future<void> toggleGlass() => setGlass(!glassEnabled);
 }

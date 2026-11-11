@@ -1,5 +1,6 @@
 #!/usr/bin/lua
 -- uhttpd CGI entry; PATH_INFO selects one fixed route in gateway.lua.
+package.path = "/usr/lib/ilink/?.lua;" .. package.path
 dofile("/usr/lib/ilink/gateway.lua")
 handle_request({
     PATH_INFO = os.getenv("PATH_INFO") or os.getenv("SCRIPT_NAME"),

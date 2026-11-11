@@ -204,17 +204,6 @@ void main() {
                 ],
               },
             ],
-            'wireless': [
-              {
-                'radio': 'radio0',
-                'ssid': 'iLink-test',
-                'mode': 'ap',
-                'channel': 36,
-                'band': '5g',
-                'up': true,
-                'encryption': 'psk2',
-              },
-            ],
           },
           _ => null,
         };
@@ -246,7 +235,6 @@ void main() {
     expect(data.memoryUsage, 0.75);
     expect(data.clients.single.hostname, 'phone');
     expect(data.interfaces.single.ipAddress, '192.168.100.1');
-    expect(data.wireless.single.ssid, 'iLink-test');
   });
 
   test('wrong certificate fingerprint is rejected', () async {

@@ -70,7 +70,6 @@ void main() {
       status: {},
       clients: [],
       interfaces: [],
-      wireless: [],
       transport: 'DDNSTO',
       fetchedAt: _epoch,
     );

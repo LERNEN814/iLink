@@ -3,6 +3,7 @@ local json = require "luci.jsonc"
 local nixio = require "nixio"
 local fs = require "nixio.fs"
 local urlcode = require "urlcode"
+local util = require "ilink_util"
 local M = {}
 
 local HOST, PORT = "127.0.0.1", 5244
@@ -21,14 +22,8 @@ local function read_credentials()
     return user, password
 end
 
-local function temp_path(suffix)
-    return "/tmp/ilink-alist-" .. tostring(os.time()) .. "-" ..
-        tostring(math.random(1000000)) .. suffix
-end
-
-local function shell_quote(value)
-    return "'" .. value:gsub("'", "'\\''") .. "'"
-end
+local temp_path = function(suffix) return util.temp_path("alist", suffix) end
+local shell_quote = util.shell_quote
 
 local function http(method, path, headers, body, timeout)
     local socket = nixio.connect(HOST, PORT)
@@ -111,30 +106,93 @@ local function clean_path(value, allow_root)
     return value
 end
 
-local function valid_name(value)
-    return type(value) == "string" and #value > 0 and #value <= 255 and
-        not value:find("[/\\%z\r\n]") and value ~= "." and value ~= ".."
+local valid_name = util.valid_name
+local encode_file = util.encode_file
+local decode_to = util.decode_to
+
+local function http(method, path, headers, body, timeout)
+    local socket = nixio.connect(HOST, PORT)
+    if not socket then error("AList is not reachable") end
+    socket:setopt("socket", "rcvtimeo", timeout or 20)
+    socket:setopt("socket", "sndtimeo", 15)
+    local head = { method .. " " .. path .. " HTTP/1.1\r\n", "Host: 127.0.0.1\r\n" }
+    for name, value in pairs(headers or {}) do
+        head[#head + 1] = name .. ": " .. value .. "\r\n"
+    end
+    head[#head + 1] = "Content-Length: " .. #(body or "") .. "\r\n"
+    head[#head + 1] = "Connection: close\r\n\r\n"
+    if not socket:send(table.concat(head) .. (body or "")) then
+        socket:close()
+        error("AList write failed")
+    end
+    local chunks, total = {}, 0
+    while true do
+        local chunk = socket:recv(16384)
+        if not chunk or #chunk == 0 then break end
+        total = total + #chunk
+        if total > MAX_BODY then socket:close(); error("AList response too large") end
+        chunks[#chunks + 1] = chunk
+    end
+    socket:close()
+    local raw = table.concat(chunks)
+    local header, payload = raw:match("^(.-)\r\n\r\n(.*)$")
+    if not header then error("invalid AList response") end
+    local code = tonumber(header:match("^HTTP/%d%.%d%s+(%d+)")) or 0
+    if header:lower():find("transfer%-encoding:%s*chunked") then
+        local decoded, position = {}, 1
+        while true do
+            local _, stop, size_text = payload:find("^(%x+)[^\r\n]*\r\n", position)
+            if not stop then break end
+            local size = tonumber(size_text, 16)
+            position = stop + 1
+            if size == 0 then break end
+            decoded[#decoded + 1] = payload:sub(position, position + size - 1)
+            position = position + size + 2
+        end
+        payload = table.concat(decoded)
+    end
+    return code, payload
+end
+
+local function login()
+    if token and os.time() - token_at < 3600 then return token end
+    local user, password = read_credentials()
+    local code, body = http("POST", "/api/auth/login",
+        { ["Content-Type"] = "application/json" },
+        json.stringify({ username = user, password = password }))
+    if code ~= 200 then error("AList login rejected") end
+    local parsed = json.parse(body)
+    local value = parsed and parsed.data and parsed.data.token
+    if not value then error("AList login failed") end
+    token, token_at = value, os.time()
+    return token
+end
+
+local function api(path, payload)
+    local code, body = http("POST", path, {
+        ["Authorization"] = login(),
+        ["Content-Type"] = "application/json"
+    }, json.stringify(payload or {}))
+    if code ~= 200 then error("AList request failed") end
+    local parsed = json.parse(body)
+    if not parsed then error("invalid AList response") end
+    if parsed.code ~= 200 then
+        error("AList: " .. tostring(parsed.message or parsed.code))
+    end
+    return parsed.data or {}
+end
+
+local function clean_path(value, allow_root)
+    if type(value) ~= "string" or #value > 1024 then error("invalid path") end
+    if value:find("%.%.") or value:find("[\\%z\r\n]") then error("invalid path") end
+    if not value:match("^/") then value = "/" .. value end
+    if #value > 1 and value:match("/$") then value = value:sub(1, -2) end
+    if value == "/" and not allow_root then error("invalid path") end
+    return value
 end
 
 local function join(dir, name)
     return (dir == "/" and "/" or dir .. "/") .. name
-end
-
-local function encode_file(path)
-    local out = temp_path(".b64")
-    require("luci.sys").exec("/usr/bin/openssl base64 -A -in " .. shell_quote(path) ..
-        " -out " .. shell_quote(out))
-    local encoded = fs.readfile(out) or ""
-    fs.unlink(out)
-    return (encoded:gsub("%s+", ""))
-end
-
-local function decode_to(encoded, target)
-    local staged = temp_path(".b64")
-    if not fs.writefile(staged, encoded) then error("cannot stage upload") end
-    require("luci.sys").exec("/usr/bin/openssl base64 -d -A -in " .. shell_quote(staged) ..
-        " -out " .. shell_quote(target))
-    fs.unlink(staged)
 end
 
 function M.list(body)

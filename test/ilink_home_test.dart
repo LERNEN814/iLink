@@ -47,7 +47,6 @@ void main() {
             'device': 'br-lan',
           }),
         ],
-        wireless: const [],
         transport: 'DDNSTO',
         fetchedAt: DateTime.fromMillisecondsSinceEpoch(0),
       );

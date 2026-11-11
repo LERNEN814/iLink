@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.9.2 — 2026-11-12
+
+代码审查后的精简。**需要更新网关**（新增 `ilink_util.lua`）。
+
+### 死代码
+
+- 删除 `cycleTheme` / `toggleGlass`（v0.7.2 改用分段开关后已无调用者）；
+- 删除 `WirelessNetwork` 模型、`ILinkData.wireless` 字段及解析（v0.7.2 移除无线卡片后无人消费）。
+
+### 网关去重
+
+- 新增 `gateway/ilink_util.lua`：`shell_quote`、`temp_path`、`valid_name`、
+  `encode_file`、`decode_to`、MIME 表统一一处。
+  `files.lua`、`alist.lua`、`downloader.lua`、`ilink-streamd.lua` 改为引用它，
+  删掉各自的副本；
+- `urlcode.lua` 补上 `unescape` 与 `query_value`，取代 `gateway.lua`、
+  `files.lua`、`ilink-streamd.lua` 里三份各自的 percent-decode；
+- `gateway.cgi` 补 `package.path`（共享模块从 CGI 入口也要能解析）。
+
+### 客户端拆分
+
+- `ilink_home.dart` 1047 → **144 行**，只保留导航外壳；
+- 概览拆到 `dashboard_page.dart`（301 行），工具拆到 `tools_page.dart`（619 行）。
+
+### 测试
+
+- 新增 6 项：通知 ID 映射、无平台通道时不抛异常、权限异常不中断传输、
+  `ExecResult.truncated` 默认值、快照时间戳换算。
+
 ## v0.9.1 — 2026-11-12
 
 工具页整理。**纯客户端改动，网关不用更新。**

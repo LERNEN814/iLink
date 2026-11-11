@@ -376,12 +376,6 @@ class ILinkGatewayClient {
             (row) => NetworkInterface.fromJson(Map<String, dynamic>.from(row)),
           )
           .toList(),
-      wireless: (responses[2]['wireless'] as List? ?? const [])
-          .whereType<Map>()
-          .map(
-            (row) => WirelessNetwork.fromJson(Map<String, dynamic>.from(row)),
-          )
-          .toList(),
       transport: _lastTransport,
       fetchedAt: DateTime.now(),
     );

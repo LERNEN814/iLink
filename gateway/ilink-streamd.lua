@@ -9,8 +9,11 @@
 -- Access is gated by single-use tickets in /tmp/ilink-stream-tickets that the
 -- gateway issues for one specific file, so the player never holds the device
 -- token and a leaked URL is worth one file for fifteen minutes.
+package.path = "/usr/lib/ilink/?.lua;" .. package.path
 local nixio = require "nixio"
 local fs = require "nixio.fs"
+local util = require "ilink_util"
+local urlcode = require "urlcode"
 
 local PORT = tonumber(arg[1]) or 8092
 local BIND_ADDR = arg[2] or "127.0.0.1"
@@ -18,36 +21,9 @@ local TICKET_DIR = "/tmp/ilink-stream-tickets"
 local TICKET_TTL = 900
 local CHUNK = 65536
 
-local MIME = {
-    mp4 = "video/mp4", mkv = "video/x-matroska", avi = "video/x-msvideo",
-    mov = "video/quicktime", webm = "video/webm", flv = "video/x-flv",
-    ts = "video/mp2t", ["m3u8"] = "application/vnd.apple.mpegurl",
-    mp3 = "audio/mpeg", flac = "audio/flac", aac = "audio/aac",
-    m4a = "audio/mp4", wav = "audio/x-wav", opus = "audio/opus",
-    ogg = "audio/ogg", oga = "audio/ogg"
-}
+local mime_of = util.mime_of
 
-local function mime_of(path)
-    local extension = path:match("%.([%w]+)$")
-    return extension and MIME[extension:lower()] or "application/octet-stream"
-end
-
--- Percent-decoding for the query string; the ticket is hex so only the path
--- parameter ever needs it.
-local function unescape(value)
-    return (value:gsub("%+", " "):gsub("%%(%x%x)", function(hex)
-        return string.char(tonumber(hex, 16))
-    end))
-end
-
-local function query_value(request, key)
-    local query = request:match("%?([^ ]*)") or ""
-    for pair in query:gmatch("[^&]+") do
-        local name, value = pair:match("^([^=]*)=(.*)$")
-        if name == key then return unescape(value or "") end
-    end
-    return ""
-end
+local query_value = urlcode.query_value
 
 local function ticket_path(ticket)
     if type(ticket) ~= "string" or not ticket:match("^%x+$") or #ticket ~= 32 then

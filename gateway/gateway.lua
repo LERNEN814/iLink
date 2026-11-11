@@ -3,6 +3,7 @@ local json = require "luci.jsonc"
 local ubus = require "ubus"
 local fs = require "nixio.fs"
 local sys = require "luci.sys"
+local urlcode = require "urlcode"
 
 local TOKEN_FILE = "/etc/ilink/device_token"
 local RPC_PASSWORD_FILE = "/etc/ilink/rpcd_password"
@@ -294,20 +295,8 @@ local module_routes = {
     ["system/upgrade-status"] = { module = "systeminfo", action = "upgrade_status", method = "GET" }
 }
 
--- Percent-decoded query lookup; used by the media stream route.
-local function query_value(raw, key)
-    for pair in (raw or ""):gmatch("[^&]+") do
-        local k, v = pair:match("^([^=]*)=(.*)$")
-        if k == key then
-            -- Form decoding order: spaces first, then percent escapes, so a
-            -- literal + that arrived as %2B survives.
-            return v:gsub("%+", " "):gsub("%%(%x%x)", function(hex)
-                return string.char(tonumber(hex, 16))
-            end)
-        end
-    end
-    return ""
-end
+-- Query lookup for the media stream route.
+local query_value = urlcode.query_value
 
 function handle_request(env)
     local path = env.PATH_INFO or ""

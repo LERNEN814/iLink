@@ -88,7 +88,6 @@ void main() {
       },
       clients: const [],
       interfaces: const [],
-      wireless: const [],
       transport: 'LAN',
       fetchedAt: DateTime.fromMillisecondsSinceEpoch(0),
     );

@@ -29,43 +29,11 @@ class ILinkProfile {
   );
 }
 
-class WirelessNetwork {
-  const WirelessNetwork({
-    required this.radio,
-    required this.ssid,
-    required this.mode,
-    required this.channel,
-    required this.band,
-    required this.up,
-    required this.encryption,
-  });
-
-  final String radio;
-  final String ssid;
-  final String mode;
-  final int channel;
-  final String band;
-  final bool up;
-  final String encryption;
-
-  factory WirelessNetwork.fromJson(Map<String, dynamic> json) =>
-      WirelessNetwork(
-        radio: json['radio']?.toString() ?? '',
-        ssid: json['ssid']?.toString() ?? '(隐藏网络)',
-        mode: json['mode']?.toString() ?? 'AP',
-        channel: (json['channel'] as num?)?.toInt() ?? 0,
-        band: json['band']?.toString() ?? '',
-        up: json['up'] == true,
-        encryption: json['encryption']?.toString() ?? '',
-      );
-}
-
 class ILinkData {
   const ILinkData({
     required this.status,
     required this.clients,
     required this.interfaces,
-    required this.wireless,
     required this.transport,
     required this.fetchedAt,
   });
@@ -73,7 +41,6 @@ class ILinkData {
   final Map<String, dynamic> status;
   final List<Client> clients;
   final List<NetworkInterface> interfaces;
-  final List<WirelessNetwork> wireless;
   final String transport;
   final DateTime fetchedAt;
 

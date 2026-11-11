@@ -13,9 +13,7 @@ local VIDEO_DIR = "/mnt/data_sdb1/video"
 local JOBS = "/tmp/ilink-dl"
 local MAX_URL = 2048
 
-local function shell_quote(value)
-    return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
-end
+local shell_quote = require("ilink_util").shell_quote
 
 local function http(port, method, path, body, extra)
     local socket = nixio.connect("127.0.0.1", port)

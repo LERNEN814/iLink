@@ -1,6 +1,8 @@
 -- Restricted file operations: canonical paths only, no path or symlink escape.
 local fs = require "nixio.fs"
 local sys = require "luci.sys"
+local util = require "ilink_util"
+local urlcode = require "urlcode"
 local M = {}
 
 local ROOT = "/mnt/data_sdb1"
@@ -14,14 +16,7 @@ local MAX_PREVIEW_IMAGE = 8 * 1024 * 1024
 local TICKET_DIR = "/tmp/ilink-stream-tickets"
 local TICKET_TTL = 900
 local STREAM_CHUNK = 65536
-local media_types = {
-    mp4 = "video/mp4", mkv = "video/x-matroska", avi = "video/x-msvideo",
-    mov = "video/quicktime", webm = "video/webm", flv = "video/x-flv",
-    ts = "video/mp2t", ["m3u8"] = "application/vnd.apple.mpegurl",
-    mp3 = "audio/mpeg", flac = "audio/flac", aac = "audio/aac",
-    m4a = "audio/mp4", wav = "audio/x-wav", opus = "audio/opus",
-    ogg = "audio/ogg", oga = "audio/ogg"
-}
+local mime_of = util.mime_of
 
 local function canonical(relative, must_exist)
     if type(relative) ~= "string" or #relative > 1024 or relative:find("%z") or
@@ -79,11 +74,11 @@ function M.list(body)
     return { path = relative, entries = result }
 end
 
-local function valid_name(value)
-    return type(value) == "string" and #value > 0 and #value <= 255 and
-        not value:find("[/\\]") and not value:find("%z") and
-        value ~= "." and value ~= ".." and not value:find("[\r\n]")
-end
+local valid_name = util.valid_name
+local shell_quote = util.shell_quote
+local encode_file = util.encode_file
+local decode_to = util.decode_to
+local temp_path = function(suffix) return util.temp_path("file", suffix) end
 
 function M.mkdir(body)
     local parent = canonical(body.path or "")
@@ -117,40 +112,6 @@ local image_types = {
     png = "image/png", jpg = "image/jpeg", jpeg = "image/jpeg",
     gif = "image/gif", webp = "image/webp", bmp = "image/bmp"
 }
-
-local function extension_of(name)
-    return (name:match("%.([%w]+)$") or ""):lower()
-end
-
-local function shell_quote(value)
-    return "'" .. value:gsub("'", "'\\''") .. "'"
-end
-
-local temp_counter = 0
-
-local function temp_path(suffix)
-    temp_counter = temp_counter + 1
-    return "/tmp/ilink-file-" .. tostring(os.time()) .. "-" ..
-        tostring(temp_counter) .. suffix
-end
-
--- openssl ships with iStoreOS; /usr/bin/base64 does not exist on this system.
-local function encode_file(path)
-    local out = temp_path(".b64")
-    sys.exec("/usr/bin/openssl base64 -A -in " .. shell_quote(path) ..
-        " -out " .. shell_quote(out))
-    local encoded = fs.readfile(out) or ""
-    fs.unlink(out)
-    return (encoded:gsub("%s+", ""))
-end
-
-local function decode_to(encoded, target)
-    local staged = temp_path(".b64")
-    if not fs.writefile(staged, encoded) then error("cannot stage upload") end
-    sys.exec("/usr/bin/openssl base64 -d -A -in " .. shell_quote(staged) ..
-        " -out " .. shell_quote(target))
-    fs.unlink(staged)
-end
 
 function M.download(body)
     local source = canonical(body.path)
@@ -252,7 +213,7 @@ function M.stream_raw(env)
         end_pos = math.min(end_pos, size - 1)
         partial = true
     end
-    local mime = media_types[extension_of(source)] or "application/octet-stream"
+    local mime = mime_of(source)
     local length = end_pos - start_pos + 1
     send("Status: " .. (partial and "206 Partial Content" or "200 OK") .. "\r\n")
     send("Content-Type: " .. mime .. "\r\n")
@@ -367,7 +328,7 @@ function M.preview(body)
     local source = canonical(body.path)
     local stat = fs.stat(source)
     if stat.type ~= "reg" then error("not a file") end
-    local mime = image_types[extension_of(source)]
+    local mime = image_types[(source:match("%.([%w]+)$") or ""):lower()]
     if mime then
         if stat.size > MAX_PREVIEW_IMAGE then error("image too large") end
         local encoded = encode_file(source)
