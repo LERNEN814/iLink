@@ -14,7 +14,7 @@
       "methods": [ "getMountPoints" ]
     },
     "ilink-action": {
-      "methods": [ "openclash", "switch-config", "subscription-info", "updates", "upgrade", "upgrade-status", "traffic", "exec", "ipcheck" ]
+      "methods": [ "openclash", "switch-config", "subscription-info", "updates", "upgrade", "upgrade-status", "traffic", "exec", "ipcheck", "network-snapshot", "network-backups", "network-restore", "network-confirm" ]
     },
     "network.interface.lan": {
       "methods": [ "status" ]

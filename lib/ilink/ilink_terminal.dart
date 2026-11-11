@@ -20,6 +20,7 @@ class _ILinkTerminalPageState extends State<ILinkTerminalPage> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
   final List<({String command, String output, bool failed})> _history = [];
+  bool _truncated = false;
   bool _running = false;
 
   @override
@@ -38,6 +39,7 @@ class _ILinkTerminalPageState extends State<ILinkTerminalPage> {
       final result = await widget.service.exec(command);
       if (!mounted) return;
       setState(() {
+        _truncated = result.truncated;
         _history.add((
           command: command,
           output: result.output,
@@ -47,6 +49,7 @@ class _ILinkTerminalPageState extends State<ILinkTerminalPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
+        _truncated = false;
         _history.add((
           command: command,
           output: error.toString(),
@@ -84,7 +87,7 @@ class _ILinkTerminalPageState extends State<ILinkTerminalPage> {
       children: [
         ILinkCard(
           child: Text(
-            '命令以 root 身份在路由器上执行，最长 30 秒。'
+            '命令以 root 身份在路由器上执行，最长 30 秒，输出最多保留 64 KB。'
             '这里能做的事和 SSH 一样，请只运行你理解的命令。',
             style: p.AppTextStyle.caption1
                 .of(context)
@@ -145,6 +148,20 @@ class _ILinkTerminalPageState extends State<ILinkTerminalPage> {
                 autocorrect: false,
                 enableSuggestions: false,
               ),
+              if (_truncated)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '输出超过 64 KB，只显示前面部分',
+                    style: p.AppTextStyle.caption1
+                        .of(context)
+                        .copyWith(
+                          color: p.Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
               const SizedBox(height: 10),
               p.FilledButton(
                 onPressed: _running ? null : _run,

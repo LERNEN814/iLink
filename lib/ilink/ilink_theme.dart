@@ -94,6 +94,28 @@ abstract final class ILinkGlyphs {
     GlyphBox(10.4, 11, 13.6, 14.4, 1, role: GlyphRole.detail),
   ]);
 
+  /// A simplified gear: ring plus four cardinal teeth.
+  static const settings = Glyph([
+    GlyphCircle(12, 12, 4.2, role: GlyphRole.detail),
+    GlyphCircle(12, 12, 8.2),
+    GlyphPolyline([
+      GlyphVertex(12, 1.8),
+      GlyphVertex(12, 4.4),
+    ], role: GlyphRole.detail),
+    GlyphPolyline([
+      GlyphVertex(12, 19.6),
+      GlyphVertex(12, 22.2),
+    ], role: GlyphRole.detail),
+    GlyphPolyline([
+      GlyphVertex(1.8, 12),
+      GlyphVertex(4.4, 12),
+    ], role: GlyphRole.detail),
+    GlyphPolyline([
+      GlyphVertex(19.6, 12),
+      GlyphVertex(22.2, 12),
+    ], role: GlyphRole.detail),
+  ]);
+
   static const chevronDown = Glyph([
     GlyphPolyline([
       GlyphVertex(5.5, 9.5),

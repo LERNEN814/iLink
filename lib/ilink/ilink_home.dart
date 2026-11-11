@@ -9,6 +9,9 @@ import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 import 'package:luci_mobile/ilink/ilink_theme.dart';
 import 'package:luci_mobile/ilink/ilink_ip_quality.dart';
+import 'package:luci_mobile/ilink/ilink_network_rollback.dart';
+import 'package:luci_mobile/ilink/ilink_notifications.dart';
+import 'package:luci_mobile/ilink/ilink_settings.dart';
 import 'package:luci_mobile/ilink/ilink_terminal.dart';
 import 'package:luci_mobile/ilink/ilink_traffic.dart';
 import 'package:luci_mobile/ilink/ilink_feature_api.dart';
@@ -448,7 +451,6 @@ class _Tools extends ConsumerStatefulWidget {
 }
 
 class _ToolsState extends ConsumerState<_Tools> {
-  bool _confirmClear = false;
   final TextEditingController _link = TextEditingController();
   List<DownloadJob> _jobs = const [];
   List<String> _updates = const [];
@@ -566,6 +568,8 @@ class _ToolsState extends ConsumerState<_Tools> {
       ),
     );
     if (confirmed != true) return;
+    const noticeId = 4099;
+    const notifier = TransferNotifier();
     setState(() {
       _upgrading = true;
       _upgradeState = 'running';
@@ -573,8 +577,24 @@ class _ToolsState extends ConsumerState<_Tools> {
     });
     try {
       await SystemInfoService(ref.read(iLinkProvider).client).startUpgrade();
-      await _pollUpgrade();
+      unawaited(
+        notifier.progress(
+          id: noticeId,
+          title: '正在更新应用',
+          text: '${_updates.length} 个软件包',
+          fraction: 0.5,
+        ),
+      );
+      await _pollUpgrade(noticeId: noticeId, notifier: notifier);
     } catch (error) {
+      unawaited(
+        notifier.done(
+          id: noticeId,
+          title: '更新失败',
+          text: error.toString(),
+          failed: true,
+        ),
+      );
       if (mounted) {
         setState(() {
           _upgrading = false;
@@ -585,7 +605,10 @@ class _ToolsState extends ConsumerState<_Tools> {
     }
   }
 
-  Future<void> _pollUpgrade() async {
+  Future<void> _pollUpgrade({
+    required int noticeId,
+    required TransferNotifier notifier,
+  }) async {
     for (var attempt = 0; attempt < 120; attempt++) {
       await Future<void>.delayed(const Duration(seconds: 5));
       if (!mounted) return;
@@ -603,6 +626,16 @@ class _ToolsState extends ConsumerState<_Tools> {
         // The router may bounce during the upgrade; keep polling.
       }
     }
+    unawaited(
+      notifier.done(
+        id: noticeId,
+        title: _upgradeState == 'error' ? '更新失败' : '应用更新完成',
+        text: _upgradeState == 'error'
+            ? (_upgradeLog.isEmpty ? '见路由器日志' : _upgradeLog.last)
+            : '服务已按需重启',
+        failed: _upgradeState == 'error',
+      ),
+    );
     if (!mounted) return;
     setState(() => _upgrading = false);
     await _checkUpdates();
@@ -773,6 +806,13 @@ class _ToolsState extends ConsumerState<_Tools> {
       title: '工具',
       refreshing: state.refreshing,
       onRefresh: () => ref.read(iLinkProvider).refresh(),
+      action: p.AppBarActionButton(
+        data: p.IconButtonData(
+          glyph: ILinkGlyphs.settings,
+          tooltip: '设置',
+          onPressed: () => openSettings(context),
+        ),
+      ),
       children: [
         const ILinkSectionTitle('连接'),
         ILinkCard(
@@ -887,38 +927,10 @@ class _ToolsState extends ConsumerState<_Tools> {
         ),
         const ILinkSectionTitle('终端'),
         ILinkTerminalTile(onTap: _openTerminal),
+        const ILinkSectionTitle('网络配置回滚'),
+        const ILinkNetworkRollbackCard(),
         const ILinkSectionTitle('网络体检'),
         _fastNetCard(),
-        const ILinkSectionTitle('外观'),
-        ILinkCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('主题', style: p.AppTextStyle.subheadline.of(context)),
-              const SizedBox(height: 8),
-              p.SegmentedControl<String>(
-                segments: const [
-                  ('light', '浅色'),
-                  ('dark', '深色'),
-                  ('system', '跟随'),
-                ],
-                value: state.themeMode,
-                onChanged: (value) => state.setThemeMode(value),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Liquid Glass',
-                style: p.AppTextStyle.subheadline.of(context),
-              ),
-              const SizedBox(height: 8),
-              p.SegmentedControl<bool>(
-                segments: const [(true, '标准'), (false, '关闭')],
-                value: state.glassEnabled,
-                onChanged: (value) => state.setGlass(value),
-              ),
-            ],
-          ),
-        ),
         const ILinkSectionTitle('固件与应用更新'),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1057,44 +1069,6 @@ class _ToolsState extends ConsumerState<_Tools> {
               ),
             ),
           ],
-        ),
-        const ILinkSectionTitle('本机配置'),
-        ILinkCard(
-          child: _confirmClear
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '清除本机保存的地址与设备凭据？路由器上的凭据仍然有效，可单独撤销。',
-                      style: p.AppTextStyle.footnote.of(context),
-                    ),
-                    const SizedBox(height: 16),
-                    p.FilledButton(
-                      onPressed: state.clear,
-                      child: const Text('确认清除'),
-                    ),
-                    p.TextButton(
-                      onPressed: () => setState(() => _confirmClear = false),
-                      child: const Text('取消'),
-                    ),
-                  ],
-                )
-              : p.OutlinedButton(
-                  onPressed: () => setState(() => _confirmClear = true),
-                  child: const Text('清除本机配置'),
-                ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Text(
-            'iLink v0.8.1\n基于 LuCI Mobile 与 Prism UI · GPL-3.0\n固定业务接口 · 最小权限',
-            textAlign: TextAlign.center,
-            style: p.AppTextStyle.caption1
-                .of(context)
-                .copyWith(
-                  color: p.Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
         ),
       ],
     );

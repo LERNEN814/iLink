@@ -319,6 +319,41 @@ class ILinkGatewayClient {
     }, failure: '下载失败');
   }
 
+  /// Uploads a file as a raw body, so size is limited by disk, not by JSON
+  /// buffering. Goes straight to the dedicated CGI entry.
+  Future<Map<String, dynamic>> uploadFile(
+    String path,
+    String name,
+    String filePath, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final profile = _profile;
+    if (profile == null) throw const ILinkApiException('尚未配置连接');
+    final total = File(filePath).lengthSync();
+    return _perEndpoint(profile, (dio, _) async {
+      final response = await dio.post<Map<String, dynamic>>(
+        '/v1/files/upload-raw',
+        queryParameters: {'path': path, 'name': name},
+        data: File(filePath).openRead().map((chunk) => chunk),
+        options: Options(
+          headers: {HttpHeaders.contentLengthHeader: total},
+          receiveTimeout: const Duration(minutes: 30),
+        ),
+        onSendProgress: onProgress,
+      );
+      final code = response.statusCode ?? 0;
+      if (code == 401 || code == 403) {
+        throw ILinkApiException('设备凭据无效或已被撤销', code);
+      }
+      if (code != 200) throw ILinkApiException('上传失败（HTTP $code）', code);
+      final payload = response.data ?? const {};
+      final data = payload['data'];
+      return data is Map
+          ? Map<String, dynamic>.from(data)
+          : <String, dynamic>{};
+    }, failure: '上传失败');
+  }
+
   Future<ILinkData> load(ILinkProfile profile) async {
     _profile = profile;
     final responses = await _request(

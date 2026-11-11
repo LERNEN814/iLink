@@ -361,10 +361,17 @@ class FirmwareInfo {
 }
 
 class ExecResult {
-  const ExecResult({required this.output, required this.code});
+  const ExecResult({
+    required this.output,
+    required this.code,
+    this.truncated = false,
+  });
 
   final String output;
   final int code;
+
+  /// The gateway keeps at most 64 KB of output.
+  final bool truncated;
 }
 
 /// Exit address and reputation, mirroring FlClash's `IpQuality` model.

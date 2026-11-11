@@ -73,6 +73,17 @@ class _ILinkTrafficCardState extends State<ILinkTrafficCard> {
     }
   }
 
+  /// Scale hint: the chart is normalised to the busiest recent sample.
+  String get _peakLabel {
+    if (_points.isEmpty) return 'WAN';
+    var peak = 0.0;
+    for (final point in _points) {
+      if (point.rx > peak) peak = point.rx;
+      if (point.tx > peak) peak = point.tx;
+    }
+    return '峰值 ${formatBytes(peak.round())}/s';
+  }
+
   @override
   Widget build(BuildContext context) {
     final latest = _points.isEmpty ? null : _points.last;
@@ -86,7 +97,7 @@ class _ILinkTrafficCardState extends State<ILinkTrafficCard> {
                 child: Text('实时流量', style: p.AppTextStyle.headline.of(context)),
               ),
               Text(
-                'WAN',
+                _peakLabel,
                 style: p.AppTextStyle.caption1
                     .of(context)
                     .copyWith(

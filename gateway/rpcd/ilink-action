@@ -225,12 +225,75 @@ local function run_command(command)
     end
     local line = string.char(10)
     fs.writefile(EXEC_SCRIPT, "#!/bin/sh" .. line .. command .. line)
-    local handle = io.popen("timeout 30 /bin/sh " .. EXEC_SCRIPT .. " 2>&1; echo __ILINK_EXIT:$?")
-    local output = handle and handle:read("*a") or ""
+    -- Cap the capture: an unbounded `cat` would otherwise travel through
+    -- JSON, the CGI stdout pipe and the phone's UI in one piece.
+    local limit = 65536
+    local capture_path = "/tmp/ilink-exec.out"
+    local handle = io.popen(
+        "timeout 30 /bin/sh " .. EXEC_SCRIPT .. " >" .. capture_path .. " 2>&1; echo __ILINK_EXIT:$?"
+    )
+    local marker = handle and handle:read("*a") or ""
     if handle then handle:close() end
-    local code = tonumber(output:match("__ILINK_EXIT:(%d+)")) or 1
-    output = output:gsub("%c*__ILINK_EXIT:%d+%c*$", "")
-    return reply({ output = output, code = code })
+    local code = tonumber(marker:match("__ILINK_EXIT:(%d+)")) or 1
+    local output = fs.readfile(capture_path) or ""
+    fs.unlink(capture_path)
+    local truncated = #output > limit
+    if truncated then
+        output = output:sub(1, limit) .. string.char(10) ..
+            "[输出已截断：仅保留前 64 KB]" .. string.char(10)
+    end
+    return reply({ output = output, code = code, truncated = truncated })
+end
+
+-- Network rollback. Restoring /etc/config/network can cut the very link the
+-- phone is using, so a restore always arms a watchdog: if the caller does not
+-- confirm within WINDOW seconds, the previous file is put back automatically.
+local NET_CONFIG = "/etc/config/network"
+local NET_BACKUP_DIR = "/etc/ilink/network-backups"
+local NET_WINDOW = 120
+local NET_FLAG = "/tmp/ilink-network-confirmed"
+
+local function net_stamp()
+    local seconds = nixio.gettimeofday()
+    return os.date("%Y%m%d-%H%M%S", seconds)
+end
+
+local function net_snapshot()
+    fs.mkdirr(NET_BACKUP_DIR)
+    local name = "network-" .. net_stamp()
+    local target = NET_BACKUP_DIR .. "/" .. name
+    local content = fs.readfile(NET_CONFIG)
+    if not content then return nil end
+    if not fs.writefile(target, content) then return nil end
+    -- Keep the last five snapshots only.
+    local names = {}
+    for entry in fs.dir(NET_BACKUP_DIR) do
+        if entry:match("^network%-%d") then names[#names + 1] = entry end
+    end
+    table.sort(names)
+    while #names > 5 do
+        fs.unlink(NET_BACKUP_DIR .. "/" .. table.remove(names, 1))
+    end
+    return name
+end
+
+local function net_restore(stamp)
+    if type(stamp) ~= "string" or not stamp:match("^network%-%d%d%d%d") then
+        return reply({ error = "invalid snapshot" })
+    end
+    local source = NET_BACKUP_DIR .. "/" .. stamp
+    local content = fs.readfile(source)
+    if not content then return reply({ error = "snapshot not found" }) end
+    -- Keep the rollback target so the watchdog can undo this restore.
+    net_snapshot()
+    fs.writefile(NET_CONFIG, content)
+    fs.unlink(NET_FLAG)
+    sys.call(string.format(
+        "( sleep %d; [ -f %s ] || cp %s %s && /etc/init.d/network reload ) >/dev/null 2>&1 &",
+        NET_WINDOW, NET_FLAG, quote(source), NET_CONFIG
+    ))
+    sys.call("/etc/init.d/network reload")
+    return reply({ restored = stamp, window = NET_WINDOW })
 end
 
 local function start_upgrade()
@@ -291,6 +354,31 @@ local function call(method)
     if method == "upgrade" then return start_upgrade() end
     if method == "upgrade-status" then return upgrade_status() end
 
+    if method == "network-snapshot" then
+        local name = net_snapshot()
+        if not name then return reply({ error = "cannot snapshot" }) end
+        return reply({ snapshot = name })
+    end
+
+    if method == "network-backups" then
+        local names = {}
+        for entry in fs.dir(NET_BACKUP_DIR) do
+            if entry:match("^network%-%d") then
+                local meta = fs.stat(NET_BACKUP_DIR .. "/" .. entry)
+                names[#names + 1] = { name = entry, modified = meta and meta.mtime or 0 }
+            end
+        end
+        table.sort(names, function(a, b) return a.name > b.name end)
+        return reply({ backups = names, window = NET_WINDOW })
+    end
+
+    if method == "network-restore" then return net_restore(body.snapshot) end
+
+    if method == "network-confirm" then
+        fs.writefile(NET_FLAG, "confirmed")
+        return reply({ confirmed = true })
+    end
+
     if method == "updates" then
         local names = upgradable()
         local held = held_packages()
@@ -327,6 +415,10 @@ if arg[1] == "list" then
         ["subscription-info"] = { name = "" },
         updates = { refresh = false },
         traffic = { sample = false },
+        ["network-snapshot"] = { sample = false },
+        ["network-backups"] = { sample = false },
+        ["network-restore"] = { snapshot = "" },
+        ["network-confirm"] = { sample = false },
         ipcheck = { sample = false },
         exec = { command = "" },
         upgrade = { confirm = false },

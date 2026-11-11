@@ -285,6 +285,10 @@ local module_routes = {
     ["openclash/ipcheck"] = { module = "openclash", action = "ipcheck", method = "GET" },
     ["system/traffic"] = { module = "systeminfo", action = "traffic", method = "GET" },
     ["system/exec"] = { module = "systeminfo", action = "exec", method = "POST" },
+    ["system/network-snapshot"] = { module = "systeminfo", action = "network_snapshot", method = "POST" },
+    ["system/network-backups"] = { module = "systeminfo", action = "network_backups", method = "GET" },
+    ["system/network-restore"] = { module = "systeminfo", action = "network_restore", method = "POST" },
+    ["system/network-confirm"] = { module = "systeminfo", action = "network_confirm", method = "POST" },
     ["system/firmware"] = { module = "systeminfo", action = "firmware", method = "GET" },
     ["system/upgrade"] = { module = "systeminfo", action = "upgrade", method = "POST" },
     ["system/upgrade-status"] = { module = "systeminfo", action = "upgrade_status", method = "GET" }
@@ -340,6 +344,22 @@ function handle_request(env)
         end
         return
     end
+    if path == "/v1/files/upload-raw" then
+        if env.REQUEST_METHOD ~= "POST" then
+            return respond(405, { error = "method_not_allowed" })
+        end
+        if not authenticated(env) then
+            audit("authentication failed")
+            return respond(401, { error = "unauthorized" })
+        end
+        local ok, data = pcall(require("files").upload_raw, env)
+        if not ok then
+            audit("upload failed: " .. tostring(data))
+            return respond(503, { error = "unavailable" })
+        end
+        return respond(200, { apiVersion = 1, data = data })
+    end
+
     local handler = routes[path]
     local body = {}
     local module = module_routes[path:match("^/v1/(.+)$") or ""]

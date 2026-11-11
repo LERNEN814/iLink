@@ -46,6 +46,24 @@ end
 
 -- iStoreOS publishes no online firmware API, so the closest stable signal is
 -- whether the vendor feed carries newer base-system packages.
+function M.network_snapshot()
+    return helper("network-snapshot", { sample = false })
+end
+
+function M.network_backups()
+    return helper("network-backups", { sample = false })
+end
+
+function M.network_restore(body)
+    local snapshot = type(body) == "table" and tostring(body.snapshot or "") or ""
+    if snapshot == "" then error("missing snapshot") end
+    return helper("network-restore", { snapshot = snapshot })
+end
+
+function M.network_confirm()
+    return helper("network-confirm", { sample = false })
+end
+
 function M.firmware()
     local releaseText = sys.exec(
         ". /etc/openwrt_release 2>/dev/null; echo \"$DISTRIB_RELEASE\"; echo \"$DISTRIB_TARGET\"; echo \"$DISTRIB_DESCRIPTION\""

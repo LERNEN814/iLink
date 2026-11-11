@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart' show MaterialPageRoute;
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:file_picker/file_picker.dart';
@@ -12,6 +14,7 @@ import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_feature_api.dart';
 import 'package:luci_mobile/ilink/ilink_feature_models.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
+import 'package:luci_mobile/ilink/ilink_notifications.dart';
 import 'package:luci_mobile/ilink/ilink_video_player.dart';
 import 'package:luci_mobile/ilink/ilink_widgets.dart';
 
@@ -163,15 +166,21 @@ class _FilesPageState extends ConsumerState<FilesPage> {
   Future<void> _upload() async {
     final picked = await FilePicker.pickFiles();
     final file = picked.isEmpty ? null : picked.first;
-    final bytes = file == null ? null : await File(file.path!).readAsBytes();
-    if (file == null || bytes == null) return;
-    if (bytes.length > 32 * 1024 * 1024) {
-      setState(() => _error = 'v0.3 上传上限为 32 MB');
+    if (file == null || file.path == null) return;
+    // Router storage streams the raw body; AList still posts base64.
+    final streamed = _source == 0;
+    final bytes = streamed ? null : await File(file.path!).readAsBytes();
+    if (!streamed && bytes != null && bytes.length > 32 * 1024 * 1024) {
+      setState(() => _error = 'AList 上传上限为 32 MB');
       return;
     }
     setState(() => _busy = true);
     try {
-      await _uploadFile(file.name, base64Encode(bytes));
+      if (streamed) {
+        await _service.uploadFrom(_dir, file.name, file.path!);
+      } else {
+        await _uploadFile(file.name, base64Encode(bytes!));
+      }
       await _refresh();
     } catch (error) {
       if (!mounted) return;
@@ -199,7 +208,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
         ),
       );
       if (overwrite == true) {
-        await _uploadFile(file.name, base64Encode(bytes), overwrite: true);
+        await _service.uploadFrom(_dir, file.name, file.path!);
         await _refresh();
       }
     } finally {
@@ -411,6 +420,8 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     }
     if (_downloads.containsKey(entry.path)) return;
     setState(() => _downloads[entry.path] = null);
+    const notifier = TransferNotifier();
+    final noticeId = notificationIdFor(entry.path);
     File? temp;
     try {
       final stamp = DateTime.now().millisecondsSinceEpoch;
@@ -423,14 +434,23 @@ class _FilesPageState extends ConsumerState<FilesPage> {
         entry.path,
         temp.path,
         onProgress: (received, total) {
-          if (!mounted) return;
-          setState(() => _downloads[entry.path] = received / total);
+          final fraction = received / total;
+          if (mounted) setState(() => _downloads[entry.path] = fraction);
+          unawaited(
+            notifier.progress(
+              id: noticeId,
+              title: '正在下载 ${entry.name}',
+              text: '${formatBytes(received)} / ${formatBytes(total)}',
+              fraction: fraction,
+            ),
+          );
         },
       );
       if (!mounted) return;
       setState(() => _downloads[entry.path] = 1.0);
       final location = await _save(temp, entry.name, _mimeOf(entry.name));
       temp = null;
+      unawaited(notifier.done(id: noticeId, title: '下载完成', text: location));
       if (!mounted) return;
       await p.showFloatingDialog<void>(
         context: context,
@@ -446,6 +466,14 @@ class _FilesPageState extends ConsumerState<FilesPage> {
         ),
       );
     } catch (error) {
+      unawaited(
+        notifier.done(
+          id: noticeId,
+          title: '下载失败',
+          text: entry.name,
+          failed: true,
+        ),
+      );
       if (mounted) {
         setState(() => _error = error.toString());
       }

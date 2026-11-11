@@ -31,6 +31,7 @@ class ILinkPage extends StatefulWidget {
     this.onRefresh,
     this.refreshing = false,
     this.scroll = true,
+    this.action,
   });
 
   final String title;
@@ -38,6 +39,9 @@ class ILinkPage extends StatefulWidget {
   final VoidCallback? onRefresh;
   final bool refreshing;
   final bool scroll;
+
+  /// Extra page-bar button, drawn before the refresh control.
+  final Widget? action;
 
   /// A phone page bar's height, matching prism_ui's page toolbar.
   static const barHeight = 72.0;
@@ -87,6 +91,10 @@ class _ILinkPageState extends State<ILinkPage> {
                     style: p.AppTextStyle.pageTitle.of(context),
                   ),
                 ),
+                if (widget.action != null) ...[
+                  widget.action!,
+                  const SizedBox(width: 4),
+                ],
                 if (widget.onRefresh != null) ...[
                   p.AppBarActionButton(
                     data: p.IconButtonData(

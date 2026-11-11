@@ -326,10 +326,10 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.1,
+            crossAxisCount: 3,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 0.82,
           ),
           itemCount: group.nodes.length,
           itemBuilder: (context, index) {
@@ -349,12 +349,12 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
               fill: selected
                   ? scheme.primary.withValues(alpha: 0.12)
                   : p.SurfaceLevel.card.colorOf(scheme),
-              shape: p.AppShape.all(24),
+              shape: p.AppShape.all(20),
               onPressed: _busy || group.type != 'Selector'
                   ? null
                   : () => _run(() => _service.select(group.name, node.name)),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(11),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -365,7 +365,7 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
                             node.type,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: p.AppTextStyle.caption1
+                            style: p.AppTextStyle.caption2
                                 .of(context)
                                 .copyWith(color: scheme.onSurfaceVariant),
                           ),
@@ -374,13 +374,13 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
                           Text('✓', style: TextStyle(color: scheme.primary)),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Expanded(
                       child: Text(
                         node.name,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
-                        style: p.AppTextStyle.footnote.of(
+                        style: p.AppTextStyle.caption1.of(
                           context,
                           emphasized: true,
                         ),

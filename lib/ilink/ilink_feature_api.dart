@@ -237,6 +237,33 @@ class SystemInfoService {
     );
   }
 
+  Future<void> networkSnapshot() =>
+      client.json('POST', 'system/network-snapshot');
+
+  Future<({List<({String name, DateTime modified})> backups, int window})>
+  networkBackups() async {
+    final result = await client.json('GET', 'system/network-backups');
+    final rows = (result['backups'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (row) => (
+            name: row['name']?.toString() ?? '',
+            modified: DateTime.fromMillisecondsSinceEpoch(
+              ((row['modified'] as num?)?.toInt() ?? 0) * 1000,
+            ),
+          ),
+        )
+        .where((row) => row.name.isNotEmpty)
+        .toList();
+    return (backups: rows, window: (result['window'] as num?)?.toInt() ?? 120);
+  }
+
+  Future<void> networkRestore(String snapshot) =>
+      client.json('POST', 'system/network-restore', {'snapshot': snapshot});
+
+  Future<void> networkConfirm() =>
+      client.json('POST', 'system/network-confirm');
+
   Future<ExecResult> exec(String command) async {
     final result = await client.json('POST', 'system/exec', {
       'command': command,
@@ -244,6 +271,7 @@ class SystemInfoService {
     return ExecResult(
       output: result['output']?.toString() ?? '',
       code: (result['code'] as num?)?.toInt() ?? 0,
+      truncated: result['truncated'] == true,
     );
   }
 }
@@ -402,6 +430,17 @@ class FileService {
       savePath,
       onProgress: onProgress,
     );
+  }
+
+  /// Streams a local file to the shared directory; no 32 MB ceiling.
+  Future<void> uploadFrom(
+    String dir,
+    String name,
+    String filePath, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    if (_fakeEntries != null) return;
+    await client!.uploadFile(dir, name, filePath, onProgress: onProgress);
   }
 
   /// A ticketed mpv URL for the built-in video player.

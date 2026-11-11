@@ -276,6 +276,67 @@ function M.stream_raw(env)
     input:close()
 end
 
+-- Streams stdin (the request body) into the shared directory. The dispatcher
+-- has already authorised the caller; the name is validated the same way as
+-- the base64 upload path.
+function M.upload_raw(env)
+    local query = env.QUERY_STRING or ""
+    local function value(key)
+        for pair in query:gmatch("[^&]+") do
+            local name, raw = pair:match("^([^=]*)=(.*)$")
+            if name == key then
+                return (raw or ""):gsub("%+", " "):gsub("%%(%x%x)", function(hex)
+                    return string.char(tonumber(hex, 16))
+                end)
+            end
+        end
+        return ""
+    end
+    local directory = value("path")
+    local name = value("name")
+    if not valid_name(name) then error("invalid name") end
+    local target_dir = canonical(directory)
+    if fs.stat(target_dir).type ~= "dir" then error("not a directory") end
+    local target = target_dir .. "/" .. name
+    if fs.stat(target) or fs.readlink(target) then error("already exists") end
+    local staged = temp_path(".part")
+    local output = io.open(staged, "wb")
+    if not output then error("cannot stage upload") end
+    local limit = 512 * 1024 * 1024
+    local total = 0
+    while true do
+        local chunk = io.read(65536)
+        if not chunk then break end
+        total = total + #chunk
+        if total > limit then
+            output:close()
+            fs.unlink(staged)
+            error("upload too large")
+        end
+        output:write(chunk)
+    end
+    output:close()
+    -- /tmp is a different filesystem from the shared disk, so rename() fails;
+    -- copy in 1 MB blocks so a large upload never lands in memory whole.
+    local input = io.open(staged, "rb")
+    local destination = io.open(target, "wb")
+    if not input or not destination then
+        if input then input:close() end
+        if destination then destination:close() end
+        fs.unlink(staged)
+        error("cannot store upload")
+    end
+    while true do
+        local block = input:read(1024 * 1024)
+        if not block then break end
+        destination:write(block)
+    end
+    input:close()
+    destination:close()
+    fs.unlink(staged)
+    return { name = name, size = total }
+end
+
 function M.copy(body)
     local source = canonical(body.path)
     local destination = canonical(body.destination or "")
