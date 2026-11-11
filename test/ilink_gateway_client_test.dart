@@ -121,6 +121,13 @@ void main() {
           },
           '/v1/openclash/select' => {'changed': true},
           '/v1/openclash/test-delay' => {'delay': 88},
+          '/v1/openclash/group-delay' => {
+            'group': 'Proxy Select',
+            'delays': {
+              'Node 1': 120,
+              'Broken Node': {'message': 'timeout'},
+            },
+          },
           '/v1/openclash/close' => {'closed': true},
           '/v1/files/list' => {
             'path': '',
@@ -259,6 +266,12 @@ void main() {
     expect(proxy.configName, 'test.yaml');
     await OpenClashService(client).select('Proxy Select', 'Node 1');
     expect(await OpenClashService(client).testDelay('Node 1'), 88);
+    final groupDelays = await OpenClashService(
+      client,
+    ).testGroupDelay('Proxy Select');
+    expect(groupDelays['Node 1'], 120);
+    // Nodes the core could not probe arrive as tables, not numbers.
+    expect(groupDelays['Broken Node'], -1);
 
     final entries = await OpenClashService(client).configEntries();
     expect(entries.length, 2);

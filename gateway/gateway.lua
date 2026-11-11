@@ -280,6 +280,7 @@ local module_routes = {
     ["downloader/remove"] = { module = "downloader", action = "remove", method = "POST" },
     ["system/services"] = { module = "systeminfo", action = "services", method = "GET" },
     ["system/updates"] = { module = "systeminfo", action = "updates", method = "GET" },
+    ["openclash/group-delay"] = { module = "openclash", action = "group_delay", method = "POST" },
     ["openclash/ipcheck"] = { module = "openclash", action = "ipcheck", method = "GET" },
     ["system/traffic"] = { module = "systeminfo", action = "traffic", method = "GET" },
     ["system/exec"] = { module = "systeminfo", action = "exec", method = "POST" },

@@ -36,6 +36,7 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
   bool _connectionsLoading = false;
   String _currentConfig = '';
   bool _serviceBusy = false;
+  bool _testingAll = false;
 
   @override
   void initState() {
@@ -152,7 +153,49 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
                   padding: EdgeInsets.symmetric(vertical: 80),
                   child: Center(child: p.ActivityIndicator()),
                 )
-              : const ILinkEmpty('连接 OpenClash 后查看代理信息')
+              : ILinkCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'OpenClash 未运行或无响应',
+                        style: p.AppTextStyle.title3.of(
+                          context,
+                          emphasized: true,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _error ?? '启动后即可查看代理信息。',
+                        style: p.AppTextStyle.caption1
+                            .of(context)
+                            .copyWith(
+                              color: p.Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: p.FilledButton(
+                              onPressed: _serviceBusy ? null : _startService,
+                              child: Text(_serviceBusy ? '启动中…' : '启动服务'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: p.OutlinedButton(
+                              onPressed: _loading ? null : _refresh,
+                              child: const Text('重新加载'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                )
         else ...[
           ILinkCard(
             child: Column(
@@ -229,6 +272,25 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
     final group = groups[_groupIndex];
     return Column(
       children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '延迟为整组并发实测，点击节点切换',
+                style: p.AppTextStyle.caption1
+                    .of(context)
+                    .copyWith(
+                      color: p.Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
+            p.OutlinedButton(
+              onPressed: _testingAll ? null : _testAll,
+              child: Text(_testingAll ? '测速中…' : '一键测速'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
         SizedBox(
           height: 44,
           child: ListView.separated(
@@ -450,6 +512,9 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
     setState(() => _serviceBusy = true);
     try {
       await _service.switchConfig(name);
+      // The helper writes uci before restarting, so the new config is already
+      // the truth even while the core is still coming back up.
+      if (mounted) setState(() => _currentConfig = name);
       await Future<void>.delayed(const Duration(seconds: 5));
       await _refresh();
     } catch (error) {
@@ -543,6 +608,55 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
       if (mounted) setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _usageLoading.remove(entry.name));
+    }
+  }
+
+  /// Tests every group of the current config; the core races the nodes of each
+  /// group concurrently, so this finishes in one probe window, not per node.
+  Future<void> _testAll() async {
+    final groups = _data?.groups ?? const [];
+    if (groups.isEmpty || _testingAll) return;
+    setState(() => _testingAll = true);
+    try {
+      final results = await Future.wait([
+        for (final group in groups) _service.testGroupDelay(group.name),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        for (final delays in results) {
+          _delays.addAll(delays);
+        }
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _testingAll = false);
+    }
+  }
+
+  /// Starts the core when the page could not reach it, then polls until the
+  /// controller answers; a stopped core was previously a dead end for the UI.
+  Future<void> _startService() async {
+    setState(() => _serviceBusy = true);
+    try {
+      await _service.service('start');
+      for (var attempt = 0; attempt < 6; attempt++) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+        if (!mounted) return;
+        try {
+          await _refresh();
+          if (_data != null) return;
+        } catch (_) {
+          // The core opens its controller a few seconds after init.d returns.
+        }
+      }
+      if (mounted) {
+        setState(() => _error = '启动超时，请稍后下拉刷新重试。');
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _serviceBusy = false);
     }
   }
 

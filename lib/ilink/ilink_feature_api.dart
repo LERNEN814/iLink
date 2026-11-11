@@ -56,6 +56,18 @@ class OpenClashService {
     });
   }
 
+  /// Tests every node of a group with one core call; failures come back as -1.
+  Future<Map<String, int>> testGroupDelay(String group) async {
+    final fake = _fakeData;
+    if (fake != null) return const {};
+    final result = await client!.json('POST', 'openclash/group-delay', {
+      'group': group,
+    });
+    return (result['delays'] as Map? ?? const {}).map(
+      (key, value) => MapEntry('$key', value is int ? value : -1),
+    );
+  }
+
   Future<int> testDelay(String proxy) async {
     if (_fakeData != null) return 88;
     final result = await client!.json('POST', 'openclash/test-delay', {

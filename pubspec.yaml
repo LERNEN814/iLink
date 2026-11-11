@@ -1,7 +1,7 @@
 name: luci_mobile
 description: "iLink: a private iStoreOS management app based on LuCI Mobile"
 publish_to: 'none'
-version: 0.7.3+13
+version: 0.7.4+14
 
 environment:
   sdk: ^3.10.0

@@ -83,6 +83,20 @@ local function clean_node(node, with_now)
     }
 end
 
+-- uci is what OpenClash actually loads on start, so switches made outside
+-- iLink (LuCI, SSH) are picked up on every read. The snapshot file is only
+-- a fallback for gateways that predate config_path.
+local function current_config()
+    local handle = io.popen("uci -q get openclash.config.config_path 2>/dev/null")
+    local value = handle and handle:read("*l") or ""
+    if handle then handle:close() end
+    value = (value or ""):gsub("%s+", "")
+    if value == "" then
+        value = (fs.readfile("/etc/ilink/clash_config") or ""):gsub("%s+", "")
+    end
+    return fs.basename(value)
+end
+
 function M.status()
     local version = request("GET", "/version")
     local config = request("GET", "/configs")
@@ -97,7 +111,7 @@ function M.status()
         version = version.version,
         mode = config.mode,
         mixedPort = config["mixed-port"],
-        config = (fs.readfile("/etc/ilink/clash_config") or ""):gsub("%s+", ""),
+        config = current_config(),
         connections = #(connections.connections or {}),
         upload = upload,
         download = download,
@@ -163,8 +177,7 @@ end
 
 function M.configs()
     local entries = {}
-    local current = (fs.readfile("/etc/ilink/clash_config") or ""):gsub("%s+", "")
-    current = fs.basename(current)
+    local current = current_config()
     for name in fs.dir("/etc/openclash/config") do
         if name:match("%.ya?ml$") and #name <= 128 and not name:find("%.%.") then
             local path = "/etc/openclash/config/" .. name
@@ -205,6 +218,25 @@ function M.service(body)
         error("invalid service operation")
     end
     return action("openclash", { op = op })
+end
+
+-- Tests every node of a group in one core call; entries for failed nodes
+-- arrive as tables and are reported as 0 so the client can mark them dead.
+function M.group_delay(body)
+    if not valid_name(body.group) then
+        error("invalid group")
+    end
+    local result = request(
+        "GET",
+        "/group/" .. urlcode.escape(body.group) ..
+            "/delay?timeout=8000&url=" ..
+            urlcode.escape("http://www.gstatic.com/generate_204")
+    )
+    local delays = {}
+    for name, delay in pairs(result or {}) do
+        delays[name] = tonumber(delay) or 0
+    end
+    return { group = body.group, delays = delays }
 end
 
 function M.switch_config(body)
@@ -254,7 +286,7 @@ end
 function M.test_delay(body)
     if not valid_name(body.proxy) then error("invalid proxy") end
     local result = request("GET", "/proxies/" .. urlcode.escape(body.proxy) ..
-        "/delay?timeout=5000&url=" .. urlcode.escape("https://www.gstatic.com/generate_204"))
+        "/delay?timeout=8000&url=" .. urlcode.escape("http://www.gstatic.com/generate_204"))
     return { proxy = body.proxy, delay = tonumber(result.delay) or 0 }
 end
 
