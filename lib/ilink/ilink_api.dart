@@ -240,9 +240,12 @@ class ILinkGatewayClient {
     );
   }
 
-  /// A play URL for the built-in mpv player. The ticket keeps the long-lived
-  /// device token out of the player; LAN hosts (self-signed certificates) ask
-  /// mpv to skip TLS verification, remote domains keep it on.
+  /// A play URL for the built-in mpv player.
+  ///
+  /// LAN playback goes to the dedicated streamer on :8444, which answers HTTP
+  /// Range requests, so seeking works. Remote playback falls back to the
+  /// gateway CGI route, which cannot seek (uhttpd drops the Range header).
+  /// The ticket keeps the long-lived device token out of the player.
   Future<({String url, bool verifyTls})> videoStreamUrl(String path) async {
     final profile = _profile;
     if (profile == null) throw const ILinkApiException('尚未配置连接');
@@ -258,17 +261,18 @@ class ILinkGatewayClient {
           '';
       if (ticket.isEmpty) throw const ILinkApiException('无法创建流媒体凭据');
       final base = Uri.parse(baseUrl);
+      final lan = RegExp(r'^[\d.]+$').hasMatch(base.host);
       final prefix = base.path.endsWith('/')
           ? base.path.substring(0, base.path.length - 1)
           : base.path;
+      final target = lan
+          // The LAN streamer terminates TLS on 8444 and forwards to the
+          // Range-aware process; the CGI route is the remote fallback.
+          ? base.replace(port: 8444, path: '/s')
+          : base.replace(path: '$prefix/v1/files/stream');
       return (
-        url: base
-            .replace(
-              path: '$prefix/v1/files/stream',
-              queryParameters: {'ticket': ticket},
-            )
-            .toString(),
-        verifyTls: !RegExp(r'^[\d.]+$').hasMatch(base.host),
+        url: target.replace(queryParameters: {'ticket': ticket}).toString(),
+        verifyTls: !lan,
       );
     }, failure: '无法创建流媒体凭据');
   }

@@ -4,7 +4,7 @@ set -eu
 # Run only after reviewing the DDNSTO and security notes in README.md.
 [ "$(id -u)" = 0 ] || { echo "Run as root" >&2; exit 1; }
 BASE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-for file in ilink-upgrade.sh gateway.lua gateway.cgi module.cgi urlcode.lua openclash.lua files.lua fastnet.lua alist.lua downloader.lua systeminfo.lua ubus-acl.json rpcd-acl.json ilink.init rpcd/ilink-action; do
+for file in ilink-upgrade.sh ilink-streamd.lua gateway.lua gateway.cgi module.cgi urlcode.lua openclash.lua files.lua fastnet.lua alist.lua downloader.lua systeminfo.lua ubus-acl.json rpcd-acl.json ilink.init rpcd/ilink-action; do
     [ -f "$BASE/$file" ] || { echo "Missing $file" >&2; exit 1; }
 done
 for command in uhttpd lua openssl useradd groupadd chpasswd uci; do
@@ -69,6 +69,11 @@ cp "$BASE/rpcd/ilink-action" /usr/libexec/rpcd/ilink-action
 chown root:root /usr/libexec/rpcd/ilink-action
 chmod 0755 /usr/libexec/rpcd/ilink-action
 cp "$BASE/ilink-upgrade.sh" /usr/libexec/ilink-upgrade.sh
+chown root:root /usr/libexec/ilink-upgrade.sh
+chmod 0755 /usr/libexec/ilink-upgrade.sh
+cp "$BASE/ilink-streamd.lua" /usr/libexec/ilink-streamd.lua
+chown root:root /usr/libexec/ilink-streamd.lua
+chmod 0755 /usr/libexec/ilink-streamd.lua
 chown root:root /usr/libexec/ilink-upgrade.sh
 chmod 0755 /usr/libexec/ilink-upgrade.sh
 cp "$BASE/rpcd-acl.json" /usr/share/rpcd/acl.d/ilink.json

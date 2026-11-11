@@ -26,6 +26,7 @@ class ILinkVideoPlayerPage extends StatefulWidget {
 class _ILinkVideoPlayerPageState extends State<ILinkVideoPlayerPage> {
   late final Player _player;
   late final VideoController _controller;
+  String? _error;
 
   @override
   void initState() {
@@ -36,12 +37,22 @@ class _ILinkVideoPlayerPageState extends State<ILinkVideoPlayerPage> {
   }
 
   Future<void> _open() async {
-    final platform = _player.platform;
-    if (!widget.verifyTls && platform is NativePlayer) {
-      // libmpv verifies TLS by default; LAN certificates are self-signed.
-      await platform.setProperty('tls-verify', 'no');
+    try {
+      if (!widget.verifyTls) {
+        // libmpv verifies TLS by default and LAN certificates are self-signed.
+        // The option travels with the media so it is applied before the
+        // connection is made; setting a property on the platform can throw
+        // while libmpv is still starting up.
+        await _player.open(
+          Media(widget.url, extras: const {'tls-verify': 'no'}),
+        );
+      } else {
+        await _player.open(Media(widget.url));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
     }
-    await _player.open(Media(widget.url));
   }
 
   @override
@@ -65,6 +76,20 @@ class _ILinkVideoPlayerPageState extends State<ILinkVideoPlayerPage> {
               controls: AdaptiveVideoControls,
             ),
           ),
+          if (_error != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  '无法播放：$_error',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFFF9A9A),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
           SafeArea(
             child: Align(
               alignment: Alignment.topLeft,
