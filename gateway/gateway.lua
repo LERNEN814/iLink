@@ -325,6 +325,13 @@ function handle_request(env)
         elseif not authenticated(env) then
             audit("authentication failed")
             return respond(401, { error = "unauthorized" })
+        else
+            -- Downloads authenticate with the device token, not a ticket.
+            local requested = query_value(query, "path")
+            if requested == "" then
+                return respond(400, { error = "missing_path" })
+            end
+            env.STREAM_PATH = requested
         end
         local ok, err = pcall(require("files").stream_raw, env)
         if not ok then

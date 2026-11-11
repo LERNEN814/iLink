@@ -248,55 +248,60 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     }
   }
 
-  static bool _isMedia(String name) {
-    const media = {
-      'mp4',
-      'mkv',
-      'avi',
-      'mov',
-      'webm',
-      'flv',
-      'ts',
-      'm3u8',
-      'mp3',
-      'flac',
-      'aac',
-      'm4a',
-      'wav',
-      'opus',
-      'ogg',
-      'oga',
-    };
+  /// One table drives preview eligibility, MIME type and the player choice.
+  static const _mimeTypes = <String, String>{
+    'mp4': 'video/mp4',
+    'mkv': 'video/x-matroska',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'webm': 'video/webm',
+    'flv': 'video/x-flv',
+    'ts': 'video/mp2t',
+    'm3u8': 'application/vnd.apple.mpegurl',
+    'mp3': 'audio/mpeg',
+    'flac': 'audio/flac',
+    'aac': 'audio/aac',
+    'm4a': 'audio/mp4',
+    'wav': 'audio/x-wav',
+    'opus': 'audio/opus',
+    'ogg': 'audio/ogg',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'bmp': 'image/bmp',
+    'txt': 'text/plain',
+    'log': 'text/plain',
+    'conf': 'text/plain',
+    'yaml': 'text/plain',
+    'yml': 'text/plain',
+    'json': 'application/json',
+    'sh': 'text/plain',
+    'lua': 'text/plain',
+    'md': 'text/plain',
+  };
+
+  static String? _extension(String name) {
     final dot = name.lastIndexOf('.');
-    return dot > 0 && media.contains(name.substring(dot + 1).toLowerCase());
+    return dot > 0 ? name.substring(dot + 1).toLowerCase() : null;
   }
 
-  static bool _isTextOrImage(String name) {
-    const types = {
-      'txt',
-      'log',
-      'conf',
-      'yaml',
-      'yml',
-      'json',
-      'sh',
-      'lua',
-      'md',
-      'jpg',
-      'jpeg',
-      'png',
-      'gif',
-      'webp',
-      'bmp',
-    };
-    final dot = name.lastIndexOf('.');
-    return dot > 0 && types.contains(name.substring(dot + 1).toLowerCase());
+  static String _mimeOf(String name) =>
+      _mimeTypes[_extension(name)] ?? 'application/octet-stream';
+
+  /// Video and audio go to the built-in player; text and images use the
+  /// gateway preview.
+  static bool _needsPlayer(String name) {
+    final mime = _mimeOf(name);
+    return mime.startsWith('video/') || mime.startsWith('audio/');
   }
+
+  static bool _previewable(String name) =>
+      _mimeTypes.containsKey(_extension(name));
 
   Future<void> _confirmOpen(FileEntry entry) async {
-    final previewable = _source == 0
-        ? (_isMedia(entry.name) || _isTextOrImage(entry.name))
-        : false;
+    final previewable = _source == 0 && _previewable(entry.name);
     final choice = await p.showFloatingDialog<String>(
       context: context,
       child: p.AlertDialog(
@@ -329,7 +334,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
       ),
     );
     if (choice == 'preview') {
-      if (_isMedia(entry.name)) {
+      if (_needsPlayer(entry.name)) {
         await _play(entry);
       } else {
         await _preview(entry);
@@ -367,38 +372,6 @@ class _FilesPageState extends ConsumerState<FilesPage> {
       setState(() => _alistPath = _parentOf(_alistPath));
     }
     await _refresh();
-  }
-
-  static String _mimeOf(String name) {
-    const video = {
-      'mp4': 'video/mp4',
-      'mkv': 'video/x-matroska',
-      'avi': 'video/x-msvideo',
-      'mov': 'video/quicktime',
-      'webm': 'video/webm',
-      'ts': 'video/mp2t',
-    };
-    const audio = {
-      'mp3': 'audio/mpeg',
-      'flac': 'audio/flac',
-      'aac': 'audio/aac',
-      'm4a': 'audio/mp4',
-      'wav': 'audio/x-wav',
-      'ogg': 'audio/ogg',
-    };
-    const image = {
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'png': 'image/png',
-      'gif': 'image/gif',
-      'webp': 'image/webp',
-    };
-    final dot = name.lastIndexOf('.');
-    final extension = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
-    return video[extension] ??
-        audio[extension] ??
-        image[extension] ??
-        'application/octet-stream';
   }
 
   static const _saveChannel = MethodChannel('ilink/save');

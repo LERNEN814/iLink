@@ -151,6 +151,40 @@ class ILinkGatewayClient {
     throw const ILinkApiException('无法连接网关，请检查 DDNSTO、地址和证书指纹');
   }
 
+  /// Runs [action] against the LAN endpoint, then the remote one, handing it
+  /// the endpoint's Dio and its base URL so callers can build absolute links.
+  Future<T> _perEndpoint<T>(
+    ILinkProfile profile,
+    Future<T> Function(Dio dio, String baseUrl) action, {
+    required String failure,
+  }) async {
+    Object? lastError;
+    for (final endpoint in _endpoints(profile)) {
+      final dio = _dio(
+        endpoint.url,
+        profile.token,
+        fingerprint: endpoint.transport == 'LAN'
+            ? profile.certificateSha256
+            : '',
+      );
+      try {
+        final result = await action(dio, endpoint.url);
+        _lastTransport = endpoint.transport;
+        return result;
+      } on DioException catch (error) {
+        final code = error.response?.statusCode;
+        if (code == 401 || code == 403) {
+          throw ILinkApiException('设备凭据无效或已被撤销', code);
+        }
+        lastError = ILinkApiException(_dioMessage(error));
+      } finally {
+        dio.close();
+      }
+    }
+    if (lastError is ILinkApiException) throw lastError;
+    throw ILinkApiException(failure);
+  }
+
   Future<Map<String, dynamic>> _parse(Response<dynamic> response) async {
     final code = response.statusCode ?? 0;
     final body = response.data;
@@ -206,58 +240,37 @@ class ILinkGatewayClient {
     );
   }
 
-  /// Issues a short-lived, path-locked stream ticket for the media player.
-  Future<String> streamTicket(String path) async {
-    final result = await json('POST', 'files/stream-ticket', {'path': path});
-    return result['ticket']?.toString() ?? '';
-  }
-
   /// A play URL for the built-in mpv player. The ticket keeps the long-lived
   /// device token out of the player; LAN hosts (self-signed certificates) ask
   /// mpv to skip TLS verification, remote domains keep it on.
   Future<({String url, bool verifyTls})> videoStreamUrl(String path) async {
     final profile = _profile;
     if (profile == null) throw const ILinkApiException('尚未配置连接');
-    Object? lastError;
-    for (final endpoint in _endpoints(profile)) {
-      final dio = _dio(
-        endpoint.url,
-        profile.token,
-        fingerprint: endpoint.transport == 'LAN'
-            ? profile.certificateSha256
-            : '',
+    return _perEndpoint(profile, (dio, baseUrl) async {
+      final response = await dio.request<Map<String, dynamic>>(
+        '/v1/files/stream-ticket',
+        data: {'path': path},
+        options: Options(method: 'POST'),
       );
-      try {
-        final response = await dio.request<Map<String, dynamic>>(
-          '/v1/files/stream-ticket',
-          data: {'path': path},
-          options: Options(method: 'POST'),
-        );
-        final ticket =
-            ((response.data ?? const {})['data'] as Map?)?['ticket']
-                ?.toString() ??
-            '';
-        if (ticket.isEmpty) {
-          throw const ILinkApiException('无法创建流媒体凭据');
-        }
-        final base = Uri.parse(endpoint.url);
-        final uri = base.replace(
-          path:
-              '${base.path.endsWith('/') ? base.path.substring(0, base.path.length - 1) : base.path}/v1/files/stream',
-          queryParameters: {'ticket': ticket},
-        );
-        final host = base.host;
-        return (
-          url: uri.toString(),
-          verifyTls: !RegExp(r'^[\d.]+$').hasMatch(host),
-        );
-      } on DioException catch (error) {
-        lastError = ILinkApiException(_dioMessage(error));
-      } finally {
-        dio.close();
-      }
-    }
-    throw lastError ?? const ILinkApiException('无法创建流媒体凭据');
+      final ticket =
+          ((response.data ?? const {})['data'] as Map?)?['ticket']
+              ?.toString() ??
+          '';
+      if (ticket.isEmpty) throw const ILinkApiException('无法创建流媒体凭据');
+      final base = Uri.parse(baseUrl);
+      final prefix = base.path.endsWith('/')
+          ? base.path.substring(0, base.path.length - 1)
+          : base.path;
+      return (
+        url: base
+            .replace(
+              path: '$prefix/v1/files/stream',
+              queryParameters: {'ticket': ticket},
+            )
+            .toString(),
+        verifyTls: !RegExp(r'^[\d.]+$').hasMatch(base.host),
+      );
+    }, failure: '无法创建流媒体凭据');
   }
 
   /// Streams a raw gateway file to disk; no size cap because nothing is
@@ -270,57 +283,36 @@ class ILinkGatewayClient {
   }) async {
     final profile = _profile;
     if (profile == null) throw const ILinkApiException('尚未配置连接');
-    Object? lastError;
-    for (final endpoint in _endpoints(profile)) {
-      final dio = _dio(
-        endpoint.url,
-        profile.token,
-        fingerprint: endpoint.transport == 'LAN'
-            ? profile.certificateSha256
-            : '',
+    await _perEndpoint<void>(profile, (dio, _) async {
+      final response = await dio.get<ResponseBody>(
+        route,
+        queryParameters: query,
+        options: Options(
+          responseType: ResponseType.stream,
+          receiveTimeout: const Duration(minutes: 30),
+        ),
       );
-      try {
-        final response = await dio.get<ResponseBody>(
-          route,
-          queryParameters: query,
-          options: Options(
-            responseType: ResponseType.stream,
-            receiveTimeout: const Duration(minutes: 30),
-          ),
-        );
-        final code = response.statusCode ?? 0;
-        if (code != 200 && code != 206) {
-          throw ILinkApiException('下载失败（HTTP $code）', code);
-        }
-        final body = response.data!;
-        final total =
-            int.tryParse(
-              response.headers.value(HttpHeaders.contentLengthHeader) ?? '',
-            ) ??
-            0;
-        final sink = File(savePath).openWrite();
-        var received = 0;
-        try {
-          await for (final chunk in body.stream) {
-            received += chunk.length;
-            sink.add(chunk);
-            if (onProgress != null && total > 0) onProgress(received, total);
-          }
-        } finally {
-          await sink.close();
-        }
-        return;
-      } on DioException catch (error) {
-        final code = error.response?.statusCode;
-        if (code == 401 || code == 403) {
-          throw ILinkApiException('设备凭据无效或已被撤销', code);
-        }
-        lastError = ILinkApiException(_dioMessage(error));
-      } finally {
-        dio.close();
+      final code = response.statusCode ?? 0;
+      if (code != 200 && code != 206) {
+        throw ILinkApiException('下载失败（HTTP $code）', code);
       }
-    }
-    throw lastError ?? const ILinkApiException('下载失败');
+      final total =
+          int.tryParse(
+            response.headers.value(HttpHeaders.contentLengthHeader) ?? '',
+          ) ??
+          0;
+      final sink = File(savePath).openWrite();
+      var received = 0;
+      try {
+        await for (final chunk in response.data!.stream) {
+          received += chunk.length;
+          sink.add(chunk);
+          if (onProgress != null && total > 0) onProgress(received, total);
+        }
+      } finally {
+        await sink.close();
+      }
+    }, failure: '下载失败');
   }
 
   Future<ILinkData> load(ILinkProfile profile) async {

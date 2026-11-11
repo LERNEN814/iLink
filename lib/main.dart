@@ -3,6 +3,7 @@ library;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:prism_ui/prism_ui.dart' as p;
 import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_home.dart';
@@ -16,6 +17,8 @@ export 'package:luci_mobile/state/app_state_provider.dart'
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // libmpv must be initialised before any Player is created.
+  MediaKit.ensureInitialized();
   runApp(const ProviderScope(child: ILinkApp()));
 }
 

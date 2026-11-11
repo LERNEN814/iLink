@@ -38,9 +38,7 @@ class _ILinkVideoPlayerPageState extends State<ILinkVideoPlayerPage> {
   Future<void> _open() async {
     final platform = _player.platform;
     if (!widget.verifyTls && platform is NativePlayer) {
-      // Newer and older mpv cores spell the option differently; unknown
-      // properties fail silently, which is acceptable.
-      await platform.setProperty('network-tls-verify', 'no');
+      // libmpv verifies TLS by default; LAN certificates are self-signed.
       await platform.setProperty('tls-verify', 'no');
     }
     await _player.open(Media(widget.url));

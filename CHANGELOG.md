@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.8.0 — 2026-11-11
+
+修复预览与下载，重写文档，精简代码。**需要更新网关**。
+
+### 修复
+
+- **下载 HTTP 404**：网关的令牌分支从未把 `?path=` 写进 `STREAM_PATH`，
+  于是回退到存储根目录、`stat` 到目录后返回 404。现已按路径校验并流式返回
+  （真机 173MB 完整下载，字节级一致）。
+- **播放器空白**：`main()` 缺少 `MediaKit.ensureInitialized()`，libmpv 未初始化，
+  播放器有壳无画面。已补；同时修正 mpv 的 TLS 选项名（`tls-verify`）。
+
+### 代码精简
+
+- 网关客户端把三处重复的「逐 endpoint 重试」循环收敛为一个 `_perEndpoint` 助手；
+- 文件页三张扩展名表（可预览 / 可播放 / MIME）合并为一张 `_mimeTypes`，
+  分类从 MIME 派生，新增类型只改一处；
+- 删除未被调用的 `streamTicket()`（`videoStreamUrl()` 自行签发票据）。
+
+总代码量：`ilink_api.dart` 373 行（少 1 个重复循环），`files_page.dart` 758 行。
+
+### 文档
+
+`README.md` 重写：删除 v0.1 / v0.2 的历史功能清单，改为按页面完整说明当前能力，
+补充安全模型、已知限制（视频回退拖动、AList 上限、固件检查语义）与验证命令。
+
 ## v0.7.5 — 2026-11-11
 
 视频预览与无上限下载。**需要更新网关**（新端点 `files/stream`、`files/stream-ticket`）。
