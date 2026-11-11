@@ -2,7 +2,10 @@ import 'package:flutter/material.dart' show MaterialPageRoute;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/ilink/ilink_controller.dart';
+import 'package:luci_mobile/ilink/ilink_network_rollback.dart';
+import 'package:luci_mobile/ilink/ilink_theme.dart';
 import 'package:luci_mobile/ilink/ilink_widgets.dart';
+import 'package:prism_ui/icons/icons.dart' as icons;
 import 'package:prism_ui/prism_ui.dart' as p;
 
 /// Everything that configures iLink itself, kept away from the tools that act
@@ -49,6 +52,8 @@ class _ILinkSettingsPageState extends ConsumerState<ILinkSettingsPage> {
             ],
           ),
         ),
+        const ILinkSectionTitle('网络配置回滚'),
+        const ILinkNetworkRollbackCard(),
         const ILinkSectionTitle('外观'),
         ILinkCard(
           child: Column(
@@ -123,3 +128,55 @@ class _ILinkSettingsPageState extends ConsumerState<ILinkSettingsPage> {
 Future<void> openSettings(BuildContext context) => Navigator.of(
   context,
 ).push(MaterialPageRoute<void>(builder: (_) => const ILinkSettingsPage()));
+
+/// Full-width entry to settings, pinned above the tools list.
+class ILinkSettingsBar extends StatelessWidget {
+  const ILinkSettingsBar({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = p.Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: p.PressSurface(
+        fill: p.SurfaceLevel.card.colorOf(scheme),
+        shape: p.AppShape.all(20),
+        onPressed: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            children: [
+              icons.GlyphIcon(
+                ILinkGlyphs.settings,
+                size: 20,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '设置',
+                  style: p.AppTextStyle.subheadline.of(context),
+                ),
+              ),
+              Text(
+                '连接 · 外观 · 网络回滚',
+                style: p.AppTextStyle.caption1
+                    .of(context)
+                    .copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '›',
+                style: p.AppTextStyle.subheadline
+                    .of(context)
+                    .copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

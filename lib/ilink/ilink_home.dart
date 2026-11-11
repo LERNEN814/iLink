@@ -9,7 +9,6 @@ import 'package:luci_mobile/ilink/ilink_controller.dart';
 import 'package:luci_mobile/ilink/ilink_models.dart';
 import 'package:luci_mobile/ilink/ilink_theme.dart';
 import 'package:luci_mobile/ilink/ilink_ip_quality.dart';
-import 'package:luci_mobile/ilink/ilink_network_rollback.dart';
 import 'package:luci_mobile/ilink/ilink_notifications.dart';
 import 'package:luci_mobile/ilink/ilink_settings.dart';
 import 'package:luci_mobile/ilink/ilink_terminal.dart';
@@ -806,34 +805,10 @@ class _ToolsState extends ConsumerState<_Tools> {
       title: '工具',
       refreshing: state.refreshing,
       onRefresh: () => ref.read(iLinkProvider).refresh(),
-      action: p.AppBarActionButton(
-        data: p.IconButtonData(
-          glyph: ILinkGlyphs.settings,
-          tooltip: '设置',
-          onPressed: () => openSettings(context),
-        ),
-      ),
       children: [
-        const ILinkSectionTitle('连接'),
-        ILinkCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ILinkKeyValue('当前通道', data.transport),
-              ILinkKeyValue('远程地址', state.profile!.remoteUrl),
-              ILinkKeyValue(
-                '局域网',
-                state.profile!.lanUrl.isEmpty ? '未配置' : state.profile!.lanUrl,
-              ),
-              ILinkKeyValue('安全', '独立设备凭据 · 固定业务接口'),
-              const SizedBox(height: 12),
-              p.OutlinedButton(
-                onPressed: state.startEditing,
-                child: const Text('修改连接设置'),
-              ),
-            ],
-          ),
-        ),
+        ILinkSettingsBar(onTap: () => openSettings(context)),
+        const ILinkSectionTitle('终端'),
+        ILinkTerminalTile(onTap: _openTerminal),
         const ILinkSectionTitle('下载'),
         ILinkCard(
           child: Column(
@@ -925,10 +900,6 @@ class _ToolsState extends ConsumerState<_Tools> {
             ],
           ),
         ),
-        const ILinkSectionTitle('终端'),
-        ILinkTerminalTile(onTap: _openTerminal),
-        const ILinkSectionTitle('网络配置回滚'),
-        const ILinkNetworkRollbackCard(),
         const ILinkSectionTitle('网络体检'),
         _fastNetCard(),
         const ILinkSectionTitle('固件与应用更新'),
