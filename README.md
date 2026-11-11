@@ -18,6 +18,7 @@
 
 最新版本见 [Releases](https://github.com/LERNEN814/iLink/releases/latest)。
 APK 目前使用 **debug keystore 测试签名**，不是应用商店正式签名。
+v1.0.0 是当前的功能终版；再发布请自行用正式 keystore 重新签名。
 
 ## 功能
 
@@ -152,7 +153,7 @@ sh test.sh                              # 校验服务与权限
 ## 验证
 
 ```sh
-flutter test                                   # 521 项
+flutter test                                   # 527 项
 dart format --output=none --set-exit-if-changed .
 sh -n gateway/install.sh gateway/test.sh gateway/ilink.init
 lua gateway/test_gateway.lua                   # 在 iStoreOS 上、仓库根目录执行
